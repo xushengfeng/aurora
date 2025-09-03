@@ -374,6 +374,9 @@ function parseSourceUrl(url: string): UrlX {
 async function cpMeta(name: string) {
 	const fromP = `${pkgbuildPath}/${name}`;
 	const toP = `${buildPath}/${name}/`;
+	try {
+		Deno.mkdirSync(toP);
+	} catch (error) {}
 	for (const i of Deno.readDirSync(fromP)) {
 		if (i.name === ".git") continue;
 		await new Deno.Command("cp", {
