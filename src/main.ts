@@ -1,5 +1,5 @@
 import { checkbox, confirm } from "@inquirer/prompts";
-import { progress } from "@ryweal/progress";
+import { mprogress, progress } from "@ryweal/progress";
 import { copySync, ensureDirSync } from "@std/fs";
 
 export { parsePkgData };
@@ -542,6 +542,18 @@ async function downloadAssets(
 		counts.set(name, (counts.get(name) || 0) - 1);
 	}
 
+	type I = {
+		name: string;
+		url: string;
+		filename: string;
+		fileUrl: string;
+		type: UrlX["type"];
+		path: string;
+	}[];
+
+	const httpL: I = [];
+	const gitL: I = [];
+
 	for (const { name, url, sum } of urls) {
 		const { name: filename, url: fileUrl, type } = parseSourceUrl(url);
 
@@ -550,22 +562,8 @@ async function downloadAssets(
 			continue;
 		}
 		const path = `${buildPath}/${name}/${filename}`;
-
 		if (type === "git") {
-			const nurl = urlMapping(fileUrl, "git");
-			console.log(
-				`${name} ${filename} from git ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
-			);
-			try {
-				await fetchGit(nurl, path, {
-					simple: false,
-					showOutput: true,
-					srcUrl: fileUrl,
-				});
-				deCount(name);
-			} catch (error) {
-				console.error(`Error fetching ${nurl}:`, error);
-			}
+			gitL.push({ name, url, filename, fileUrl, type, path });
 		} else if (type === "http") {
 			if (existsSync(path, { isFile: true })) {
 				const x = await sumCheckStrict(path, sum.type, sum.value);
@@ -574,44 +572,81 @@ async function downloadAssets(
 					continue;
 				}
 			}
+			httpL.push({ name, url, filename, fileUrl, type, path });
+		}
+	}
 
-			const nurl = urlMapping(fileUrl, "http");
+	const { promise, resolve: re } = Promise.withResolvers();
+	let ps: ReturnType<typeof progress>[] = [];
 
-			let p: ReturnType<typeof progress> | null = null;
+	async function newDl() {
+		if (httpL.length === 0) {
+			re(null);
+			return;
+		}
+		const { fileUrl, filename, name, path } = httpL.pop()!;
+		const nurl = urlMapping(fileUrl, "http");
 
-			try {
-				console.log(
-					`${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
-				);
+		let p: ReturnType<typeof progress> | null = null;
 
-				await fetchFile(
-					nurl,
-					path,
-					(all) => {
-						p = progress(`[[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`, {
-							total: all,
-							unit: "MB",
-							unitScale: 1024 * 1024,
-							shape: {
-								bar: {
-									start: "|",
-									end: "|",
-									completed: "█",
-									pending: " ",
-								},
-								total: { mask: "###.##" },
-								count: { mask: "###.##" },
+		// \n${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}
+
+		try {
+			await fetchFile(
+				nurl,
+				path,
+				(all) => {
+					p = progress(`[[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`, {
+						total: all,
+						unit: "MB",
+						unitScale: 1024 * 1024,
+						shape: {
+							bar: {
+								start: "|",
+								end: "|",
+								completed: "█",
+								pending: " ",
 							},
-						});
-					},
-					(l) => {
-						p?.update(l);
-					},
-				); // todo multi
-				deCount(name);
-			} catch (error) {
-				console.error(`Error fetching ${nurl}:`, error);
-			}
+							total: { mask: "###.##" },
+							count: { mask: "###.##" },
+						},
+					});
+
+					ps.push(p);
+					mprogress(ps);
+				},
+				(l) => {
+					p?.update(l);
+				},
+			);
+			deCount(name);
+		} catch (error) {
+			console.error(`Error fetching ${nurl}:`, error);
+		}
+
+		ps = ps.filter((i) => i !== p);
+		mprogress(ps);
+		newDl();
+	}
+
+	for (const _i of new Array(3).fill(0)) newDl();
+
+	await promise;
+
+	for (const { name, fileUrl, filename, path } of gitL) {
+		const nurl = urlMapping(fileUrl, "git");
+		console.log(
+			`${name} ${filename} from git ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
+		);
+		try {
+			await fetchGit(nurl, path, {
+				simple: false,
+				showOutput: true,
+				srcUrl: fileUrl,
+			});
+			deCount(name);
+		} catch (error) {
+			console.error(`Error fetching ${nurl}:`, error);
 		}
 	}
 
