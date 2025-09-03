@@ -1,7 +1,11 @@
 {
-  "imports": {
-    "@inquirer/prompts": "npm:@inquirer/prompts@^7.8.4",
-    "@ryweal/progress": "jsr:@ryweal/progress@^1.0.1",
-    "@std/fs": "jsr:@std/fs@^1.0.19"
-  }
+    "name": "aurora",
+    "imports": {
+        "@inquirer/prompts": "npm:@inquirer/prompts@^7.8.4",
+        "@ryweal/progress": "jsr:@ryweal/progress@^1.0.1",
+        "@std/fs": "jsr:@std/fs@^1.0.19"
+    },
+    "tasks": {
+        "build": "deno compile -A --output dist/aurora src/main.ts"
+    }
 }
