@@ -431,8 +431,7 @@ function cpMeta(name: string) {
 async function parsePkgUrls(name: string) {
 	const fromP = `${pkgbuildPath}/${name}`;
 	const toP = `${buildPath}/${name}/`;
-	const p = `${pkgbuildPath}/${name}/.SRCINFO`;
-	const data = parsePkgData(Deno.readTextFileSync(p));
+	const data = parsePkgData(getPkgFile(name)!);
 	for (const i of Deno.readDirSync(fromP)) {
 		if (i.name === ".git") continue;
 		await new Deno.Command("cp", {
@@ -440,6 +439,28 @@ async function parsePkgUrls(name: string) {
 		}).output();
 	}
 	return data.source.concat((data[`source_${thisArch}`] ?? []) as string[]);
+}
+function parsePkgSums(name: string) {
+	const data = parsePkgData(getPkgFile(name)!);
+	const sumK = [
+		"b2",
+		"sha512",
+		"sha384",
+		"sha256",
+		"sha224",
+		"sha1",
+		"md5",
+		"ck",
+	];
+	const s = sumK.find((i) => Object.keys(data).find((x) => x.startsWith(i)));
+	if (!s) return { type: "", sum: [] };
+	const ss = `${s}sums`;
+	const sum = (data[ss] as string[]) ?? [];
+	const sum2 = (data[`${ss}_${thisArch}`] as string[]) ?? [];
+	return {
+		type: s,
+		sum: sum.concat(sum2),
+	};
 }
 
 function urlMapping(url: string, type: UrlX["type"]) {
@@ -461,7 +482,27 @@ function urlMapping(url: string, type: UrlX["type"]) {
 	return url;
 }
 
-async function downloadAssets(urls: { name: string; url: string }[]) {
+async function sumCheckStrict(path: string, type: string, sum: string) {
+	if (sum === "SKIP") return false;
+	if (sum === "") return false;
+	if (!path) return false;
+	try {
+		const c = new Deno.Command(`${type}sum`, {
+			args: [path],
+			stdout: "piped",
+		});
+		const { stdout, success } = await c.output();
+		if (!success) return false;
+		const hash = new TextDecoder().decode(stdout).split(" ")[0];
+		return hash === sum;
+	} catch {
+		return false;
+	}
+}
+
+async function downloadAssets(
+	urls: { name: string; url: string; sum: { type: string; value: string } }[],
+) {
 	const counts = new Map<string, number>();
 
 	for (const { name } of urls) {
@@ -472,7 +513,7 @@ async function downloadAssets(urls: { name: string; url: string }[]) {
 		counts.set(name, (counts.get(name) || 0) - 1);
 	}
 
-	for (const { name, url } of urls) {
+	for (const { name, url, sum } of urls) {
 		const { name: filename, url: fileUrl, type } = parseSourceUrl(url);
 
 		if (!(fileUrl.startsWith("http://") || fileUrl.startsWith("https://"))) {
@@ -498,11 +539,8 @@ async function downloadAssets(urls: { name: string; url: string }[]) {
 			}
 		} else if (type === "http") {
 			if (existsSync(path, { isFile: true })) {
-				// todo sum check
-				const x = await confirm({
-					message: `File ${name}/${filename} already exists. Overwrite?`,
-				});
-				if (!x) {
+				const x = await sumCheckStrict(path, sum.type, sum.value);
+				if (x) {
 					deCount(name);
 					continue;
 				}
@@ -607,12 +645,18 @@ async function update() {
 		await getAurPackage(name);
 	}
 	// todo view edit
-	const urls: { name: string; url: string }[] = [];
+	const urls: {
+		name: string;
+		url: string;
+		sum: { type: string; value: string };
+	}[] = [];
 	for (const name of nl) {
 		cpMeta(name);
 		const url = await parsePkgUrls(name);
+		const { type, sum } = parsePkgSums(name);
 		console.log(`found ${url.length} assets for ${name}`);
-		for (const i of url) urls.push({ name, url: i });
+		for (const [n, i] of url.entries())
+			urls.push({ name, url: i, sum: { type, value: sum[n] ?? "" } });
 	}
 	const sl = await downloadAssets(urls);
 	const sl2 = await make(sl);
