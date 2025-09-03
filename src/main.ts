@@ -221,14 +221,24 @@ async function fetchFile(
 	}
 }
 
-async function fetchGit(url: string, path: string): Promise<boolean> {
+async function fetchGit(
+	url: string,
+	path: string,
+	simple = true,
+): Promise<boolean> {
 	try {
 		// 检查目标路径是否已存在
 		try {
 			const stat = await Deno.stat(path);
 			if (stat.isDirectory) {
-				// todo pull
-				return true;
+				const command = new Deno.Command("git", {
+					args: ["pull"],
+				});
+
+				const { stderr } = await command.output();
+				if (stderr.length > 0) {
+					Deno.removeSync(path, { recursive: true });
+				} else return true;
 			}
 		} catch (error) {
 			// 目录不存在，继续执行
@@ -239,7 +249,7 @@ async function fetchGit(url: string, path: string): Promise<boolean> {
 
 		// 执行 git clone 命令
 		const command = new Deno.Command("git", {
-			args: ["clone", "--depth", "1", url, path],
+			args: ["clone", url, path].concat(simple ? ["--depth", "1"] : []),
 		});
 
 		const { code, stderr } = await command.output();
