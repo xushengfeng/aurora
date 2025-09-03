@@ -450,7 +450,11 @@ function cpMeta(name: string) {
 	ensureDirSync(toP);
 	for (const i of Deno.readDirSync(fromP)) {
 		if (i.name === ".git") continue;
-		copySync(`${fromP}/${i.name}`, `${toP}/${i.name}`, { overwrite: true });
+		try {
+			copySync(`${fromP}/${i.name}`, `${toP}/${i.name}`, { overwrite: true });
+		} catch (error) {
+			console.warn(`can't cp ${fromP}/${i.name}`);
+		}
 	}
 }
 async function parsePkgUrls(name: string) {
