@@ -158,25 +158,37 @@ async function fetchFile(
 	onStart?: (size: number) => void,
 	onProgress?: (loaded: number, total: number) => void,
 ): Promise<void> {
-	const res = await fetch(url);
-
-	if (!res.ok) {
-		throw new Error(`Failed to fetch ${url}: ${res.status} ${res.statusText}`);
-	}
-
-	// 获取内容长度（可能为null）
-	const contentLength = res.headers.get("content-length");
-	const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-	if (onStart) onStart(totalBytes);
-	if (!res.body) {
-		throw new Error("Response body is null");
-	}
-
-	const reader = res.body.getReader();
-	let receivedBytes = 0;
-	const chunks: Uint8Array[] = [];
+	let file: Deno.FsFile | null = null;
+	let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
 	try {
+		const res = await fetch(url);
+
+		if (!res.ok) {
+			throw new Error(
+				`Failed to fetch ${url}: ${res.status} ${res.statusText}`,
+			);
+		}
+
+		// 获取内容长度
+		const contentLength = res.headers.get("content-length");
+		const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+		if (onStart) onStart(totalBytes);
+
+		if (!res.body) {
+			throw new Error("Response body is null");
+		}
+
+		reader = res.body.getReader();
+		let receivedBytes = 0;
+
+		// 创建文件并准备流式写入
+		file = await Deno.open(path, {
+			create: true,
+			write: true,
+			truncate: true,
+		});
+
 		while (true) {
 			const { done, value } = await reader.read();
 
@@ -184,35 +196,41 @@ async function fetchFile(
 				break;
 			}
 
-			chunks.push(value);
+			// 直接写入文件
+			await file.write(value);
 			receivedBytes += value.length;
 
-			// 调用进度回调
 			if (onProgress) {
 				onProgress(receivedBytes, totalBytes);
 			}
 		}
+
+		// 确保最终进度回调
+		if (onProgress && totalBytes > 0) {
+			onProgress(totalBytes, totalBytes);
+		}
+	} catch (error) {
+		// 清理部分下载的文件
+		try {
+			if (file) file.close();
+			await Deno.remove(path).catch(() => {}); // 忽略删除错误
+		} catch (cleanupError) {
+			console.warn("清理文件时出错:", cleanupError);
+		}
+
+		throw error; // 重新抛出错误
 	} finally {
-		reader.releaseLock();
-	}
-
-	// 合并所有块并写入文件
-	const fullData = new Uint8Array(receivedBytes);
-	let position = 0;
-
-	for (const chunk of chunks) {
-		fullData.set(chunk, position);
-		position += chunk.length;
-	}
-
-	await Deno.writeFile(path, fullData);
-
-	// 最终进度回调（确保达到100%）
-	if (onProgress && totalBytes !== null) {
-		onProgress(totalBytes, totalBytes);
+		// 确保资源被释放
+		if (reader) {
+			reader.releaseLock();
+		}
+		if (file) {
+			try {
+				file.close();
+			} catch (error) {}
+		}
 	}
 }
-
 async function fetchGit(
 	url: string,
 	path: string,
