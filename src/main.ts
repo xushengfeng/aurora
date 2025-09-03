@@ -424,6 +424,14 @@ function parseSourceUrl(url: string): UrlX {
 		type = "git";
 	}
 
+	if (u.startsWith("https://") || u.startsWith("http://")) {
+		const urlObj = new URL(u);
+		let path = urlObj.pathname;
+		path = path.replace(/\/\/+/g, "/");
+		urlObj.pathname = path;
+		u = urlObj.toString();
+	}
+
 	return {
 		name,
 		url: u,
