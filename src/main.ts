@@ -1,5 +1,6 @@
 import { checkbox, confirm } from "@inquirer/prompts";
 import { progress } from "@ryweal/progress";
+import { copySync, ensureDirSync } from "@std/fs";
 
 export { parsePkgData };
 
@@ -101,6 +102,45 @@ const urlMappingList: {
 		to: "https://hub.gitmirror.com/https://github.com",
 	},
 ];
+
+async function exists(file: string, op?: { isFile: boolean }) {
+	try {
+		const stats = await Deno.lstat(file);
+		if (op) {
+			if (op.isFile && stats.isFile) {
+				return true;
+			} else {
+				return false;
+			}
+		} else {
+			return true;
+		}
+	} catch (err) {
+		if (!(err instanceof Deno.errors.NotFound)) {
+			throw err;
+		}
+		return false;
+	}
+}
+function existsSync(file: string, op?: { isFile: boolean }) {
+	try {
+		const stats = Deno.lstatSync(file);
+		if (op) {
+			if (op.isFile && stats.isFile) {
+				return true;
+			} else {
+				return false;
+			}
+		} else {
+			return true;
+		}
+	} catch (err) {
+		if (!(err instanceof Deno.errors.NotFound)) {
+			throw err;
+		}
+		return false;
+	}
+}
 
 function getLocalAurList() {
 	const x = new Deno.Command("pacman", {
@@ -254,8 +294,7 @@ async function fetchGit(
 	}
 
 	try {
-		// 检查目标路径是否已存在
-		try {
+		if (await exists(path)) {
 			const stat = await Deno.stat(path);
 			if (stat.isDirectory) {
 				await setUrl(url);
@@ -271,11 +310,6 @@ async function fetchGit(
 				if (stderr.length > 0) {
 					Deno.removeSync(path, { recursive: true });
 				} else return true;
-			}
-		} catch (error) {
-			// 目录不存在，继续执行
-			if (!(error instanceof Deno.errors.NotFound)) {
-				throw error;
 			}
 		}
 
@@ -342,16 +376,12 @@ function parsePkgData(data: string) {
 
 function getPkgFile(name: string) {
 	const p = `${pkgbuildPath}/${name}/.SRCINFO`;
-	try {
-		const fileInfo = Deno.statSync(p);
-		if (!fileInfo.isFile) return null;
-	} catch {
-		return null;
-	}
-	try {
-		return Deno.readTextFileSync(p);
-	} catch (error) {
-		console.error(`Error reading ${p}:`, error);
+	if (existsSync(p, { isFile: true })) {
+		try {
+			return Deno.readTextFileSync(p);
+		} catch (error) {
+			console.error(`Error reading ${p}:`, error);
+		}
 	}
 	return null;
 }
@@ -389,17 +419,13 @@ function parseSourceUrl(url: string): UrlX {
 	};
 }
 
-async function cpMeta(name: string) {
+function cpMeta(name: string) {
 	const fromP = `${pkgbuildPath}/${name}`;
 	const toP = `${buildPath}/${name}/`;
-	try {
-		Deno.mkdirSync(toP);
-	} catch (error) {}
+	ensureDirSync(toP);
 	for (const i of Deno.readDirSync(fromP)) {
 		if (i.name === ".git") continue;
-		await new Deno.Command("cp", {
-			args: [`${fromP}/${i.name}`, toP, "-r"],
-		}).output();
+		copySync(`${fromP}/${i.name}`, `${toP}/${i.name}`, { overwrite: true });
 	}
 }
 async function parsePkgUrls(name: string) {
@@ -471,18 +497,16 @@ async function downloadAssets(urls: { name: string; url: string }[]) {
 				console.error(`Error fetching ${nurl}:`, error);
 			}
 		} else if (type === "http") {
-			try {
-				if (Deno.statSync(path)) {
-					// todo sum check
-					const x = await confirm({
-						message: `File ${name}/${filename} already exists. Overwrite?`,
-					});
-					if (!x) {
-						deCount(name);
-						continue;
-					}
+			if (existsSync(path, { isFile: true })) {
+				// todo sum check
+				const x = await confirm({
+					message: `File ${name}/${filename} already exists. Overwrite?`,
+				});
+				if (!x) {
+					deCount(name);
+					continue;
 				}
-			} catch (error) {}
+			}
 
 			const nurl = urlMapping(fileUrl, "http");
 
@@ -561,15 +585,9 @@ async function update() {
 		})),
 	});
 
-	try {
-		Deno.mkdirSync(basePath, { recursive: true });
-	} catch (error) {}
-	try {
-		Deno.mkdirSync(pkgbuildPath, { recursive: true });
-	} catch (error) {}
-	try {
-		Deno.mkdirSync(buildPath, { recursive: true });
-	} catch (error) {}
+	ensureDirSync(basePath);
+	ensureDirSync(pkgbuildPath);
+	ensureDirSync(buildPath);
 
 	for (const [i, name] of nl.entries()) {
 		console.log(`get ${name}...(${i + 1}/${nl.length})`);
@@ -591,7 +609,7 @@ async function update() {
 	// todo view edit
 	const urls: { name: string; url: string }[] = [];
 	for (const name of nl) {
-		await cpMeta(name);
+		cpMeta(name);
 		const url = await parsePkgUrls(name);
 		console.log(`found ${url.length} assets for ${name}`);
 		for (const i of url) urls.push({ name, url: i });
