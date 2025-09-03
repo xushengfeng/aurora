@@ -760,7 +760,7 @@ async function update() {
 
 	if (pkgFiles.length) {
 		const c = new Deno.Command("sudo", {
-			args: ["pacman", "-U", ...pkgFiles],
+			args: ["pacman", "-U", "--noconfirm", ...pkgFiles],
 			stdin: "inherit",
 			stdout: "inherit",
 			stderr: "inherit",
