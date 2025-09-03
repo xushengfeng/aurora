@@ -626,7 +626,35 @@ async function gpgImport(key: string) {
 
 async function make(names: string[]) {
 	const okNames: string[] = [];
+
+	const buildList: string[] = [];
+
+	const builtNames: string[] = [];
 	for (const name of names) {
+		const p = parsePkgData(getPkgFile(name)!);
+		if (
+			existsSync(`${buildPath}/${name}/${name}-${getPkgVersion(p)}.pkg.tar.zst`)
+		) {
+			builtNames.push(name);
+			continue;
+		}
+	}
+	const mustRebuild = builtNames.length
+		? await checkbox({
+				message: "Select packages to rebuild",
+				choices: builtNames.map((i) => ({ name: i, value: i, checked: true })),
+			})
+		: [];
+	for (const i of names) {
+		if (mustRebuild.includes(i)) {
+			buildList.push(i);
+		} else if (builtNames.includes(i)) {
+			okNames.push(i);
+		} else {
+			buildList.push(i);
+		}
+	}
+	for (const name of buildList) {
 		console.log(`Building ${name}...`);
 		const p = parsePkgData(getPkgFile(name)!);
 		if (p.validpgpkeys) {
