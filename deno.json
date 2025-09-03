@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@inquirer/prompts": "npm:@inquirer/prompts@^7.8.4",
+    "@ryweal/progress": "jsr:@ryweal/progress@^1.0.1"
+  }
+}
