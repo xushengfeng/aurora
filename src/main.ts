@@ -349,12 +349,14 @@ function parsePkgData(data: string) {
 		pkgrel: string;
 		source: string[];
 		source_x86_64?: string[];
+		validpgpkeys?: string[];
 	} & Record<string, string | string[]> = {
 		pkgname: "",
 		pkgver: "",
 		pkgrel: "",
 		source: [],
 	};
+	const justStr = ["pkgname", "pkgver", "pkgrel"];
 	for (const i of data.split("\n")) {
 		const eq = i.indexOf("=");
 		if (eq === -1) continue;
@@ -366,8 +368,10 @@ function parsePkgData(data: string) {
 				old.push(value);
 			} else if (old) {
 				pkgbuild[key] = [old, value];
+			} else if (!justStr.includes(key)) {
+				pkgbuild[key] = [value];
 			} else {
-				pkgbuild[key] = value;
+				pkgbuild[key] = [value];
 			}
 		}
 	}
@@ -594,10 +598,48 @@ async function downloadAssets(
 		.map(([k]) => k);
 }
 
+async function gpgCheckKeyInLocal(key: string) {
+	const command = new Deno.Command("gpg", {
+		args: ["--list-keys", "--fingerprint", key],
+	});
+	const { success } = await command.output();
+	if (!success) return false;
+	return true;
+}
+
+async function gpgImport(key: string) {
+	const command = new Deno.Command("gpg", {
+		args: ["--receive-keys", key],
+	});
+	const { success } = await command.output();
+	if (!success) return false;
+	return true;
+}
+
 async function make(names: string[]) {
 	const okNames: string[] = [];
 	for (const name of names) {
 		console.log(`Building ${name}...`);
+		const p = parsePkgData(getPkgFile(name)!);
+		if (p.validpgpkeys) {
+			const k: string[] = [];
+			for (const i of p.validpgpkeys) {
+				if (!(await gpgCheckKeyInLocal(i))) {
+					k.push(i);
+				}
+			}
+			if (k.length) {
+				const x = await confirm({
+					message: `The following keys are not trusted. Import them?\n${k.join("\n")}`,
+				});
+				if (x) {
+					for (const i of k) {
+						const x = await gpgImport(i);
+						if (!x) console.error(`Import key ${i} failed.`);
+					}
+				}
+			}
+		}
 		const x = new Deno.Command("makepkg", {
 			args: ["-f"],
 			cwd: `${buildPath}/${name}`,

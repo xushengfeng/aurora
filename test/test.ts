@@ -16,5 +16,7 @@ Deno.test({
 		console.log(x);
 		const x2 = parsePkgData(Deno.readTextFileSync("./test/pkgbuild/.SRCINFO2"));
 		console.log(x2);
+		const x3 = parsePkgData(Deno.readTextFileSync("./test/pkgbuild/.SRCINFO3"));
+		console.log(x3);
 	},
 });
