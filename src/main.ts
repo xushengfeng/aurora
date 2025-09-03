@@ -64,21 +64,11 @@ type AURMultiInfoResponse =
 	  }
 	| AURError;
 
-// 类型定义
-interface ParamExpansionMatch {
-	fullMatch: string;
-	expression: string;
-	isSimple: boolean;
-}
-
-// 解析复杂参数表达式
-interface ParsedExpression {
-	variable: string;
-	operator?: string;
-	pattern?: string;
-	replacement?: string;
-	defaultValue?: string;
-}
+type UrlX = {
+	name: string;
+	url: string;
+	type: "http" | "git";
+};
 
 const aurUrl = "https://aur.archlinux.org/rpc/?v=5";
 const aurPackageUrl = "https://aur.archlinux.org/$pkgname.git";
@@ -86,9 +76,6 @@ const aurPackageUrlKey = "$pkgname";
 const basePath = `${Deno.env.get("XDG_CACHE_HOME") ?? Deno.env.get("HOME")}/.cache/myaur`;
 const pkgbuildPath = `${basePath}/pkgbuild`;
 const buildPath = `${basePath}/build`;
-
-// 完整的参数扩展正则表达式
-const PARAM_EXPANSION_REGEX = /\$(?:\{([^}]+)\}|(\w+))/g;
 
 const thisArch = "x86_64";
 
@@ -106,6 +93,11 @@ const urlMappingList: {
 	{
 		src: "https://github.com",
 		type: "http",
+		to: "https://hub.gitmirror.com/https://github.com",
+	},
+	{
+		src: "https://github.com",
+		type: "git",
 		to: "https://hub.gitmirror.com/https://github.com",
 	},
 ];
@@ -224,18 +216,40 @@ async function fetchFile(
 async function fetchGit(
 	url: string,
 	path: string,
-	simple = true,
+	op?: {
+		simple?: boolean;
+		showOutput?: boolean;
+		srcUrl?: string;
+	},
 ): Promise<boolean> {
+	const simple = op?.simple ?? true;
+	const showOutput = op?.showOutput ?? false;
+
+	const srcUrl = op?.srcUrl ?? url;
+
+	async function setUrl(u: string) {
+		const command = new Deno.Command("git", {
+			args: ["remote", "set-url", "origin", u],
+			cwd: path,
+		}).spawn();
+		await command.output();
+	}
+
 	try {
 		// 检查目标路径是否已存在
 		try {
 			const stat = await Deno.stat(path);
 			if (stat.isDirectory) {
+				await setUrl(url);
 				const command = new Deno.Command("git", {
 					args: ["pull"],
+					stdout: showOutput ? "inherit" : "piped",
+					stderr: "piped",
+					cwd: path,
 				});
 
 				const { stderr } = await command.output();
+				await setUrl(srcUrl);
 				if (stderr.length > 0) {
 					Deno.removeSync(path, { recursive: true });
 				} else return true;
@@ -250,9 +264,11 @@ async function fetchGit(
 		// 执行 git clone 命令
 		const command = new Deno.Command("git", {
 			args: ["clone", url, path].concat(simple ? ["--depth", "1"] : []),
+			stderr: "piped",
 		});
 
 		const { code, stderr } = await command.output();
+		await setUrl(srcUrl);
 
 		if (stderr.length > 0) {
 			console.error(new TextDecoder().decode(stderr));
@@ -320,26 +336,50 @@ function getPkgFile(name: string) {
 	return null;
 }
 
-function parseSourceUrl(url: string) {
+function parseSourceUrl(url: string): UrlX {
 	const x = url.indexOf("::");
 	let name = "";
 	let u = "";
+	let type: UrlX["type"] = "http";
 
 	if (x === -1) {
 		u = url;
-		name = url.split("/").at(-1)!;
+		if (url.startsWith("git+")) {
+			name = url
+				.split("/")
+				.at(-1)!
+				.replace(/\.git.*$/, "");
+		} else {
+			name = url.split("/").at(-1)!;
+		}
 	} else {
 		u = url.slice(x + 2);
 		name = url.slice(0, x);
 	}
 
+	if (u.startsWith("git+")) {
+		u = u.slice(4).replace(/\.git.*$/, "");
+		type = "git";
+	}
+
 	return {
 		name,
 		url: u,
+		type,
 	};
 }
 
-async function pkgAssetsUrls(name: string) {
+async function cpMeta(name: string) {
+	const fromP = `${pkgbuildPath}/${name}`;
+	const toP = `${buildPath}/${name}/`;
+	for (const i of Deno.readDirSync(fromP)) {
+		if (i.name === ".git") continue;
+		await new Deno.Command("cp", {
+			args: [`${fromP}/${i.name}`, toP, "-r"],
+		}).output();
+	}
+}
+async function parsePkgUrls(name: string) {
 	const fromP = `${pkgbuildPath}/${name}`;
 	const toP = `${buildPath}/${name}/`;
 	const p = `${pkgbuildPath}/${name}/.SRCINFO`;
@@ -353,7 +393,7 @@ async function pkgAssetsUrls(name: string) {
 	return data.source.concat((data[`source_${thisArch}`] ?? []) as string[]);
 }
 
-function urlMapping(url: string, type: "git" | "http") {
+function urlMapping(url: string, type: UrlX["type"]) {
 	for (const i of urlMappingList) {
 		if (i.type !== type) continue;
 		let x: string | RegExp = "";
@@ -374,58 +414,70 @@ function urlMapping(url: string, type: "git" | "http") {
 
 async function downloadAssets(urls: { name: string; url: string }[]) {
 	for (const { name, url } of urls) {
-		const { name: filename, url: fileUrl } = parseSourceUrl(url);
+		const { name: filename, url: fileUrl, type } = parseSourceUrl(url);
 
 		if (!(fileUrl.startsWith("http://") || fileUrl.startsWith("https://"))) {
 			continue;
 		}
-
 		const path = `${buildPath}/${name}/${filename}`;
-		try {
-			if (Deno.statSync(path)) {
-				// todo sum check
-				const x = await confirm({
-					message: `File ${name}/${filename} already exists. Overwrite?`,
-				});
-				if (!x) continue;
-			}
-		} catch (error) {}
 
-		const nurl = urlMapping(fileUrl, "http");
+		if (type === "git") {
+			const nurl = urlMapping(fileUrl, "git");
+			console.log(
+				`${name} ${filename} from git ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
+			);
+			await fetchGit(nurl, path, {
+				simple: false,
+				showOutput: true,
+				srcUrl: fileUrl,
+			});
+		} else if (type === "http") {
+			try {
+				if (Deno.statSync(path)) {
+					// todo sum check
+					const x = await confirm({
+						message: `File ${name}/${filename} already exists. Overwrite?`,
+					});
+					if (!x) continue;
+				}
+			} catch (error) {}
 
-		console.log(
-			`${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
-		);
+			const nurl = urlMapping(fileUrl, "http");
 
-		let p: ReturnType<typeof progress> | null = null;
+			console.log(
+				`${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
+			);
 
-		await fetchFile(
-			nurl,
-			path,
-			(all) => {
-				p = progress(
-					`Downloading ${name} ${filename} [[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`,
-					{
-						total: all,
-						unit: "MB",
-						unitScale: 1024 * 1024,
-						shape: {
-							bar: {
-								start: "|",
-								end: "|",
-								completed: "█",
-								pending: " ",
+			let p: ReturnType<typeof progress> | null = null;
+
+			await fetchFile(
+				nurl,
+				path,
+				(all) => {
+					p = progress(
+						`Downloading ${name} ${filename} [[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`,
+						{
+							total: all,
+							unit: "MB",
+							unitScale: 1024 * 1024,
+							shape: {
+								bar: {
+									start: "|",
+									end: "|",
+									completed: "█",
+									pending: " ",
+								},
+								total: { mask: "###.##" },
+								count: { mask: "###.##" },
 							},
-							total: { mask: "###.##" },
-							count: { mask: "###.##" },
 						},
-					},
-				);
-			},
-			(l) => {
-				p?.update(l);
-			},
-		); // todo multi
+					);
+				},
+				(l) => {
+					p?.update(l);
+				},
+			); // todo multi
+		}
 	}
 }
 
@@ -482,7 +534,8 @@ async function update() {
 	// todo view edit
 	const urls: { name: string; url: string }[] = [];
 	for (const name of nl) {
-		const url = await pkgAssetsUrls(name);
+		await cpMeta(name);
+		const url = await parsePkgUrls(name);
 		console.log(`found ${url.length} assets for ${name}`);
 		for (const i of url) urls.push({ name, url: i });
 	}
@@ -499,7 +552,6 @@ async function update() {
 		const x = `${data.pkgname}-${data.pkgver}-${data.pkgrel}-${thisArch}.pkg.tar.zst`;
 		pkgFiles.push(`${buildPath}/${i}/${x}`);
 	}
-	console.log(`sudo pacman -U ${pkgFiles.join(" ")}`);
 
 	new Deno.Command("sudo", {
 		args: ["pacman", "-U", ...pkgFiles],
