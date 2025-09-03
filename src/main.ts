@@ -750,18 +750,20 @@ async function update() {
 		pkgFiles.push(`${buildPath}/${i}/${x}`);
 	}
 
-	if (pkgFiles.length)
-		new Deno.Command("sudo", {
+	if (pkgFiles.length) {
+		const c = new Deno.Command("sudo", {
 			args: ["pacman", "-U", ...pkgFiles],
 			stdin: "inherit",
 			stdout: "inherit",
 			stderr: "inherit",
 		}).spawn();
+		await c.output();
+	}
 
 	if (sl2.length !== nl.length)
 		console.log(
 			"Some packages failed to build.",
-			nl.filter((x) => !sl2.includes(x)),
+			nl.filter((x) => !sl2.includes(x)).join(", "),
 		);
 }
 
