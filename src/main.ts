@@ -1,7 +1,7 @@
 import { checkbox, confirm } from "@inquirer/prompts";
 import { progress } from "@ryweal/progress";
 
-export { parsePKGBUILD, parsePKGBUILDMore };
+export { parsePkgData };
 
 // 基础包信息（search和multiinfo共有）
 interface PackageBaseInfo {
@@ -274,309 +274,8 @@ async function getAurPackage(name: string) {
 	await fetchGit(url, `${pkgbuildPath}/${name}`);
 }
 
-function parsePKGBUILD(data: string) {
-	// todo .SRCINFO
-	const pkgbuild: Record<string, string> = {};
-	let runtype: "normal" | "ignoreLine" = "normal";
-	let isLineStart = true;
-	let l = "";
-	let key = "";
-	let afterEq = false;
-	let valueStart = false;
-	let endC = "\n";
-
-	for (let i = 0; i < data.length; i++) {
-		const char = data[i];
-		if (isLineStart) {
-			isLineStart = false;
-			if (char === "\n") {
-				isLineStart = true;
-				continue;
-			}
-			if (!/[a-z_-]/.test(char)) {
-				// todo more
-				runtype = "ignoreLine";
-				continue;
-			}
-		}
-		if (runtype === "normal") {
-			if (char === "=") {
-				key = l;
-				l = "";
-				afterEq = true;
-			} else {
-				if (afterEq && !valueStart && /\S/.test(char)) {
-					valueStart = true;
-					l = "";
-				}
-				if (char === "(" && valueStart) endC = ")";
-				l += char;
-				afterEq = false;
-				valueStart = false;
-			}
-		}
-		if (runtype === "ignoreLine") {
-			if (char === "\n") {
-				isLineStart = true;
-				runtype = "normal";
-			}
-			continue;
-		}
-		if (char === endC) {
-			if (key) {
-				pkgbuild[key] = l.trim();
-				key = "";
-			}
-			l = "";
-			endC = "\n";
-			if (char === "\n") {
-				isLineStart = true;
-				runtype = "normal";
-			}
-		}
-	}
-	return pkgbuild;
-}
-
-// 解析所有参数扩展
-function parseAllParamExpansions(str: string): ParamExpansionMatch[] {
-	const matches: ParamExpansionMatch[] = [];
-	const regex = new RegExp(PARAM_EXPANSION_REGEX);
-	let match = regex.exec(str);
-
-	while (match !== null) {
-		const isSimple = !!match[2]; // 如果是简单格式 $var
-		const expression = isSimple ? match[2] : match[1];
-
-		matches.push({
-			fullMatch: match[0],
-			expression,
-			isSimple,
-		});
-
-		match = regex.exec(str);
-	}
-
-	return matches;
-}
-
-function parseComplexExpression(expr: string): ParsedExpression {
-	// 匹配操作符: %, %%, #, ##, /, //, :, :-, :=, :?, :+
-	const operatorRegex = /^([a-zA-Z_][a-zA-Z0-9_]*)(?:([%#/:]+)([^}]*))?$/;
-	const match = expr.match(operatorRegex);
-
-	if (!match) {
-		return { variable: expr };
-	}
-
-	const variable = match[1];
-	const operator = match[2] || "";
-	const rest = match[3] || "";
-
-	let pattern: string | undefined;
-	let replacement: string | undefined;
-	let defaultValue: string | undefined;
-
-	// 根据操作符类型解析剩余部分
-	if (operator === "/" || operator === "//") {
-		// 替换操作: ${var/pattern/replacement}
-		const parts = rest.split("/");
-		if (parts.length >= 2) {
-			pattern = parts[0];
-			replacement = parts[1];
-		}
-	} else if (operator === ":" && rest.length > 0) {
-		// 默认值操作: ${var:-default}, ${var:=default}, ${var:?error}, ${var:+alternative}
-		const subOperator = rest[0];
-		defaultValue = rest.substring(1);
-
-		// 处理特殊操作符
-		if (
-			subOperator === "-" ||
-			subOperator === "=" ||
-			subOperator === "?" ||
-			subOperator === "+"
-		) {
-			return {
-				variable,
-				operator: operator + subOperator,
-				defaultValue,
-			};
-		}
-	} else if (operator && rest) {
-		// 其他操作符: %, %%, #, ##
-		pattern = rest;
-	}
-
-	return {
-		variable,
-		operator,
-		pattern,
-		replacement,
-		defaultValue,
-	};
-}
-
-// 应用参数扩展
-function applyParamExpansion(
-	str: string,
-	variables: Record<string, string>,
-): string {
-	const matches = parseAllParamExpansions(str);
-	let result = str;
-
-	for (const match of matches) {
-		if (match.isSimple) {
-			// 简单变量: $var
-			if (match.expression in variables) {
-				result = result.replace(match.fullMatch, variables[match.expression]);
-			}
-		} else {
-			// 复杂表达式: ${expression}
-			const parsed = parseComplexExpression(match.expression);
-
-			if (!(parsed.variable in variables)) {
-				// 变量不存在，处理默认值等情况
-				if (parsed.operator === ":-" || parsed.operator === ":=") {
-					result = result.replace(match.fullMatch, parsed.defaultValue || "");
-				} else if (parsed.operator === ":?") {
-					throw new Error(
-						`Parameter expansion error: ${parsed.variable}${parsed.operator}${parsed.defaultValue}`,
-					);
-				} else if (parsed.operator === ":+") {
-					result = result.replace(match.fullMatch, "");
-				}
-				continue;
-			}
-
-			let value = variables[parsed.variable];
-
-			// 应用参数扩展操作
-			switch (parsed.operator) {
-				case "%": // 从末尾移除最短匹配
-					if (parsed.pattern && value.endsWith(parsed.pattern)) {
-						value = value.slice(0, -parsed.pattern.length);
-					}
-					break;
-				case "%%": // 从末尾移除最长匹配
-					if (parsed.pattern) {
-						while (value.endsWith(parsed.pattern)) {
-							value = value.slice(0, -parsed.pattern.length);
-						}
-					}
-					break;
-				case "#": // 从开头移除最短匹配
-					if (parsed.pattern && value.startsWith(parsed.pattern)) {
-						value = value.slice(parsed.pattern.length);
-					}
-					break;
-				case "##": // 从开头移除最长匹配
-					if (parsed.pattern) {
-						while (value.startsWith(parsed.pattern)) {
-							value = value.slice(parsed.pattern.length);
-						}
-					}
-					break;
-				case "/": // 替换第一次出现
-					if (parsed.pattern && parsed.replacement !== undefined) {
-						value = value.replace(parsed.pattern, parsed.replacement);
-					}
-					break;
-				case "//": // 替换所有出现
-					if (parsed.pattern && parsed.replacement !== undefined) {
-						value = value.replace(
-							new RegExp(parsed.pattern, "g"),
-							parsed.replacement,
-						);
-					}
-					break;
-				case ":-": // 使用默认值（如果变量未设置或为空）
-					if (!value) {
-						value = parsed.defaultValue || "";
-					}
-					break;
-				case ":=": // 分配默认值（如果变量未设置或为空）
-					if (!value) {
-						value = parsed.defaultValue || "";
-						variables[parsed.variable] = value; // 更新变量值
-					}
-					break;
-				case ":?": // 显示错误（如果变量未设置或为空）
-					if (!value) {
-						throw new Error(
-							`Parameter expansion error: ${parsed.variable}${parsed.operator}${parsed.defaultValue}`,
-						);
-					}
-					break;
-				case ":+": // 使用替代值（如果变量已设置且非空）
-					if (value) {
-						value = parsed.defaultValue || "";
-					} else {
-						value = "";
-					}
-					break;
-				// 子字符串提取 ${var:offset:length}
-				default:
-					if (
-						parsed.operator?.startsWith(":") &&
-						parsed.operator.length === 1
-					) {
-						const parts = parsed.pattern?.split(":") || [];
-						const offset = parseInt(parts[0] || "0", 10);
-						const length = parts[1] ? parseInt(parts[1], 10) : undefined;
-
-						if (length !== undefined) {
-							value = value.substring(offset, offset + length);
-						} else {
-							value = value.substring(offset);
-						}
-					}
-					break;
-			}
-
-			result = result.replace(match.fullMatch, value);
-		}
-	}
-
-	return result;
-}
-
-function parsePKGBUILDMore(data: Record<string, string>) {
-	function unwarpStr(str: string) {
-		let s = str;
-		if (str.startsWith('"') && str.endsWith('"')) s = str.slice(1, -1);
-		if (str.startsWith("'") && str.endsWith("'")) s = str.slice(1, -1);
-		// @ts-expect-error
-		s = applyParamExpansion(s, res);
-		return s;
-	}
-	function unwarpArray(str: string) {
-		const arr: string[] = [];
-		const inner = str.slice(1, -1).trim();
-		let s = inner;
-		let count = 0;
-		while (s.length && count < inner.length) {
-			let c: number = 0;
-			if (s.startsWith('"')) {
-				c = s.indexOf('"', 1);
-			} else if (s.startsWith("'")) c = s.indexOf("'", 1);
-			else {
-				const i = s.search(/\s/);
-				if (i === -1) c = s.length - 1;
-				else c = i - 1;
-			}
-			if (c !== 0) {
-				const end = c;
-				const v = s.slice(0, end + 1);
-				const other = s.slice(end + 1).trimStart();
-				arr.push(unwarpStr(v));
-				s = other;
-			}
-			count++;
-		}
-		return arr;
-	}
-	const res: {
+function parsePkgData(data: string) {
+	const pkgbuild: {
 		pkgname: string;
 		pkgver: string;
 		source: string[];
@@ -586,23 +285,27 @@ function parsePKGBUILDMore(data: Record<string, string>) {
 		pkgver: "",
 		source: [],
 	};
-	for (const [k, v] of Object.entries(data)) {
-		if (v.startsWith("(") && v.endsWith(")")) {
-			res[k] = unwarpArray(v);
-		} else if (
-			(v.startsWith('"') && v.endsWith('"')) ||
-			(v.startsWith("'") && v.endsWith("'"))
-		) {
-			res[k] = unwarpStr(v);
-		} else {
-			res[k] = v;
+	for (const i of data.split("\n")) {
+		const eq = i.indexOf("=");
+		if (eq === -1) continue;
+		const key = i.slice(0, eq).trim();
+		const value = i.slice(eq + 1).trim();
+		if (key && value) {
+			const old = pkgbuild[key];
+			if (Array.isArray(old)) {
+				old.push(value);
+			} else if (old) {
+				pkgbuild[key] = [old, value];
+			} else {
+				pkgbuild[key] = value;
+			}
 		}
 	}
-	return res;
+	return pkgbuild;
 }
 
 function getPkgFile(name: string) {
-	const p = `${pkgbuildPath}/${name}/PKGBUILD`;
+	const p = `${pkgbuildPath}/${name}/.SRCINFO`;
 	try {
 		const fileInfo = Deno.statSync(p);
 		if (!fileInfo.isFile) return null;
@@ -639,8 +342,8 @@ function parseSourceUrl(url: string) {
 async function pkgAssetsUrls(name: string) {
 	const fromP = `${pkgbuildPath}/${name}`;
 	const toP = `${buildPath}/${name}/`;
-	const p = `${pkgbuildPath}/${name}/PKGBUILD`;
-	const data = parsePKGBUILDMore(parsePKGBUILD(Deno.readTextFileSync(p)));
+	const p = `${pkgbuildPath}/${name}/.SRCINFO`;
+	const data = parsePkgData(Deno.readTextFileSync(p));
 	for (const i of Deno.readDirSync(fromP)) {
 		if (i.name === ".git") continue;
 		await new Deno.Command("cp", {
@@ -765,7 +468,8 @@ async function update() {
 		const p = getPkgFile(name);
 		if (p) {
 			console.log("find", name);
-			const data = parsePKGBUILDMore(parsePKGBUILD(p));
+			const data = parsePkgData(p);
+			// todo cache
 			if (
 				l.find((x) => x.remote.Name === name)?.remote.Version === data.pkgver
 			) {
@@ -791,7 +495,7 @@ async function update() {
 	for (const i of nl) {
 		const p = getPkgFile(i);
 		if (!p) continue;
-		const data = parsePKGBUILDMore(parsePKGBUILD(p));
+		const data = parsePkgData(p);
 		const x = `${data.pkgname}-${data.pkgver}-${data.pkgrel}-${thisArch}.pkg.tar.zst`;
 		pkgFiles.push(`${buildPath}/${i}/${x}`);
 	}

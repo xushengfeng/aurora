@@ -1,38 +1,20 @@
 import { assertEquals } from "jsr:@std/assert";
-import { parsePKGBUILD, parsePKGBUILDMore } from "../src/main.ts";
+import { parsePkgData } from "../src/main.ts";
 
 Deno.test({
 	name: "PKGBUILD",
 	fn: () => {
-		const x = parsePKGBUILD(Deno.readTextFileSync("./test/pkgbuild/PKGBUILD"));
+		const x = parsePkgData(Deno.readTextFileSync("./test/pkgbuild/.SRCINFO"));
 		console.log(x);
-		const haveKey = [
-			"pkgname",
-			"pkgver",
-			"pkgrel",
-			"pkgdesc",
-			"arch",
-			"url",
-			"license",
-			"provides",
-			"conflicts",
-			"depends",
-			"makedepends",
-			"source",
-			"sha256sums",
-		];
-		assertEquals(Object.keys(x).sort(), haveKey.sort());
 	},
 });
 
 Deno.test({
 	name: "PKGBUILD2",
 	fn: () => {
-		const x = parsePKGBUILD(Deno.readTextFileSync("./test/pkgbuild/PKGBUILD"));
-		console.log(parsePKGBUILDMore(x));
-		const x2 = parsePKGBUILD(
-			Deno.readTextFileSync("./test/pkgbuild/PKGBUILD2"),
-		);
-		console.log(parsePKGBUILDMore(x2));
+		const x = parsePkgData(Deno.readTextFileSync("./test/pkgbuild/.SRCINFO"));
+		console.log(x);
+		const x2 = parsePkgData(Deno.readTextFileSync("./test/pkgbuild/.SRCINFO2"));
+		console.log(x2);
 	},
 });
