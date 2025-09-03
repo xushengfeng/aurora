@@ -278,6 +278,7 @@ async function fetchGit(
 		simple?: boolean;
 		showOutput?: boolean;
 		srcUrl?: string;
+		force?: boolean;
 	},
 ): Promise<boolean> {
 	const simple = op?.simple ?? true;
@@ -294,7 +295,11 @@ async function fetchGit(
 	}
 
 	try {
-		if (await exists(path)) {
+		if (op?.force) {
+			try {
+				Deno.removeSync(path, { recursive: true });
+			} catch {}
+		} else if (await exists(path)) {
 			const stat = await Deno.stat(path);
 			if (stat.isDirectory) {
 				await setUrl(url);
@@ -701,13 +706,15 @@ async function update() {
 	console.log("checking for updates...");
 
 	const l = await getNewPackages();
-	const nl = await checkbox({
+	const _nl = await checkbox({
 		message: "Select packages to update",
 		choices: l.map((p) => ({
 			name: `${p.local.name} ${p.local.version} -> ${p.remote.Version}`,
-			value: p.remote.Name,
+			value: p.remote.PackageBase,
 		})),
 	});
+
+	const nl = Array.from(new Set(_nl));
 
 	ensureDirSync(basePath);
 	ensureDirSync(pkgbuildPath);
