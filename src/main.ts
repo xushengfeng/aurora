@@ -577,35 +577,32 @@ async function downloadAssets(
 
 			const nurl = urlMapping(fileUrl, "http");
 
-			console.log(
-				`${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
-			);
-
 			let p: ReturnType<typeof progress> | null = null;
 
 			try {
+				console.log(
+					`${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
+				);
+
 				await fetchFile(
 					nurl,
 					path,
 					(all) => {
-						p = progress(
-							`Downloading ${name} ${filename} [[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`,
-							{
-								total: all,
-								unit: "MB",
-								unitScale: 1024 * 1024,
-								shape: {
-									bar: {
-										start: "|",
-										end: "|",
-										completed: "█",
-										pending: " ",
-									},
-									total: { mask: "###.##" },
-									count: { mask: "###.##" },
+						p = progress(`[[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`, {
+							total: all,
+							unit: "MB",
+							unitScale: 1024 * 1024,
+							shape: {
+								bar: {
+									start: "|",
+									end: "|",
+									completed: "█",
+									pending: " ",
 								},
+								total: { mask: "###.##" },
+								count: { mask: "###.##" },
 							},
-						);
+						});
 					},
 					(l) => {
 						p?.update(l);
