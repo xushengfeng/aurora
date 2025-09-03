@@ -436,10 +436,21 @@ function urlMapping(url: string, type: UrlX["type"]) {
 }
 
 async function downloadAssets(urls: { name: string; url: string }[]) {
+	const counts = new Map<string, number>();
+
+	for (const { name } of urls) {
+		counts.set(name, (counts.get(name) || 0) + 1);
+	}
+
+	function deCount(name: string) {
+		counts.set(name, (counts.get(name) || 0) - 1);
+	}
+
 	for (const { name, url } of urls) {
 		const { name: filename, url: fileUrl, type } = parseSourceUrl(url);
 
 		if (!(fileUrl.startsWith("http://") || fileUrl.startsWith("https://"))) {
+			deCount(name);
 			continue;
 		}
 		const path = `${buildPath}/${name}/${filename}`;
@@ -449,11 +460,16 @@ async function downloadAssets(urls: { name: string; url: string }[]) {
 			console.log(
 				`${name} ${filename} from git ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
 			);
-			await fetchGit(nurl, path, {
-				simple: false,
-				showOutput: true,
-				srcUrl: fileUrl,
-			});
+			try {
+				await fetchGit(nurl, path, {
+					simple: false,
+					showOutput: true,
+					srcUrl: fileUrl,
+				});
+				deCount(name);
+			} catch (error) {
+				console.error(`Error fetching ${nurl}:`, error);
+			}
 		} else if (type === "http") {
 			try {
 				if (Deno.statSync(path)) {
@@ -461,7 +477,10 @@ async function downloadAssets(urls: { name: string; url: string }[]) {
 					const x = await confirm({
 						message: `File ${name}/${filename} already exists. Overwrite?`,
 					});
-					if (!x) continue;
+					if (!x) {
+						deCount(name);
+						continue;
+					}
 				}
 			} catch (error) {}
 
@@ -473,35 +492,44 @@ async function downloadAssets(urls: { name: string; url: string }[]) {
 
 			let p: ReturnType<typeof progress> | null = null;
 
-			await fetchFile(
-				nurl,
-				path,
-				(all) => {
-					p = progress(
-						`Downloading ${name} ${filename} [[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`,
-						{
-							total: all,
-							unit: "MB",
-							unitScale: 1024 * 1024,
-							shape: {
-								bar: {
-									start: "|",
-									end: "|",
-									completed: "█",
-									pending: " ",
+			try {
+				await fetchFile(
+					nurl,
+					path,
+					(all) => {
+						p = progress(
+							`Downloading ${name} ${filename} [[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`,
+							{
+								total: all,
+								unit: "MB",
+								unitScale: 1024 * 1024,
+								shape: {
+									bar: {
+										start: "|",
+										end: "|",
+										completed: "█",
+										pending: " ",
+									},
+									total: { mask: "###.##" },
+									count: { mask: "###.##" },
 								},
-								total: { mask: "###.##" },
-								count: { mask: "###.##" },
 							},
-						},
-					);
-				},
-				(l) => {
-					p?.update(l);
-				},
-			); // todo multi
+						);
+					},
+					(l) => {
+						p?.update(l);
+					},
+				); // todo multi
+				deCount(name);
+			} catch (error) {
+				console.error(`Error fetching ${nurl}:`, error);
+			}
 		}
 	}
+
+	return Array.from(counts.entries())
+		.filter(([, v]) => v === 0)
+		.map(([k]) => k);
 }
 
 async function make(names: string[]) {
@@ -568,13 +596,13 @@ async function update() {
 		console.log(`found ${url.length} assets for ${name}`);
 		for (const i of url) urls.push({ name, url: i });
 	}
-	await downloadAssets(urls);
-	const sl = await make(nl);
+	const sl = await downloadAssets(urls);
+	const sl2 = await make(sl);
 
 	console.log("install");
 
 	const pkgFiles: string[] = [];
-	for (const i of sl) {
+	for (const i of sl2) {
 		const p = getPkgFile(i);
 		if (!p) continue;
 		const data = parsePkgData(p);
@@ -589,6 +617,12 @@ async function update() {
 			stdout: "inherit",
 			stderr: "inherit",
 		}).spawn();
+
+	if (sl2.length !== nl.length)
+		console.log(
+			"Some packages failed to build.",
+			nl.filter((x) => !sl2.includes(x)),
+		);
 }
 
 update();
