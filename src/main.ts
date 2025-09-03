@@ -294,11 +294,13 @@ function parsePkgData(data: string) {
 	const pkgbuild: {
 		pkgname: string;
 		pkgver: string;
+		pkgrel: string;
 		source: string[];
 		source_x86_64?: string[];
 	} & Record<string, string | string[]> = {
 		pkgname: "",
 		pkgver: "",
+		pkgrel: "",
 		source: [],
 	};
 	for (const i of data.split("\n")) {
@@ -482,6 +484,7 @@ async function downloadAssets(urls: { name: string; url: string }[]) {
 }
 
 async function make(names: string[]) {
+	const okNames: string[] = [];
 	for (const name of names) {
 		console.log(`Building ${name}...`);
 		const x = new Deno.Command("makepkg", {
@@ -490,7 +493,11 @@ async function make(names: string[]) {
 			stdout: "inherit",
 		}).spawn();
 		await x.output();
+		if ((await x.status).success) {
+			okNames.push(name);
+		}
 	}
+	return okNames;
 }
 
 async function update() {
@@ -523,7 +530,8 @@ async function update() {
 			const data = parsePkgData(p);
 			// todo cache
 			if (
-				l.find((x) => x.remote.Name === name)?.remote.Version === data.pkgver
+				l.find((x) => x.remote.Name === name)?.remote.Version ===
+				`${data.pkgver}-${data.pkgrel}`
 			) {
 				console.log(`${name} PKGBUILD is downloaded.`);
 				continue;
@@ -540,12 +548,12 @@ async function update() {
 		for (const i of url) urls.push({ name, url: i });
 	}
 	await downloadAssets(urls);
-	await make(nl);
+	const sl = await make(nl);
 
 	console.log("install");
 
 	const pkgFiles: string[] = [];
-	for (const i of nl) {
+	for (const i of sl) {
 		const p = getPkgFile(i);
 		if (!p) continue;
 		const data = parsePkgData(p);
@@ -553,12 +561,13 @@ async function update() {
 		pkgFiles.push(`${buildPath}/${i}/${x}`);
 	}
 
-	new Deno.Command("sudo", {
-		args: ["pacman", "-U", ...pkgFiles],
-		stdin: "inherit",
-		stdout: "inherit",
-		stderr: "inherit",
-	}).spawn();
+	if (pkgFiles.length)
+		new Deno.Command("sudo", {
+			args: ["pacman", "-U", ...pkgFiles],
+			stdin: "inherit",
+			stdout: "inherit",
+			stderr: "inherit",
+		}).spawn();
 }
 
 update();
