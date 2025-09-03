@@ -347,6 +347,7 @@ function parsePkgData(data: string) {
 		pkgname: string;
 		pkgver: string;
 		pkgrel: string;
+		epoch?: string;
 		source: string[];
 		source_x86_64?: string[];
 		validpgpkeys?: string[];
@@ -376,6 +377,13 @@ function parsePkgData(data: string) {
 		}
 	}
 	return pkgbuild;
+}
+
+function getPkgVersion(data: ReturnType<typeof parsePkgData>) {
+	let v = data.pkgver;
+	if (data.epoch) v = `${data.epoch}:${v}`;
+	if (data.pkgrel) v = `${v}-${data.pkgrel}`;
+	return v;
 }
 
 function getPkgFile(name: string) {
@@ -678,7 +686,7 @@ async function update() {
 			// todo cache
 			if (
 				l.find((x) => x.remote.Name === name)?.remote.Version ===
-				`${data.pkgver}-${data.pkgrel}`
+				getPkgVersion(data)
 			) {
 				console.log(`${name} PKGBUILD is downloaded.`);
 				continue;
@@ -710,7 +718,7 @@ async function update() {
 		const p = getPkgFile(i);
 		if (!p) continue;
 		const data = parsePkgData(p);
-		const x = `${data.pkgname}-${data.pkgver}-${data.pkgrel}-${thisArch}.pkg.tar.zst`;
+		const x = `${data.pkgname}-${getPkgVersion(data)}-${thisArch}.pkg.tar.zst`;
 		pkgFiles.push(`${buildPath}/${i}/${x}`);
 	}
 
