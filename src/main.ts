@@ -353,6 +353,7 @@ function parsePkgData(data: string) {
 		validpgpkeys?: string[];
 		makedepends?: string[];
 		depends?: string[];
+		arch?: string[];
 	} & Record<string, string | string[]> = {
 		pkgname: "",
 		pkgver: "",
@@ -386,6 +387,11 @@ function getPkgVersion(data: ReturnType<typeof parsePkgData>) {
 	if (data.epoch) v = `${data.epoch}:${v}`;
 	if (data.pkgrel) v = `${v}-${data.pkgrel}`;
 	return v;
+}
+
+function getPkgName(data: ReturnType<typeof parsePkgData>) {
+	const arch = data.arch?.includes("any") ? "any" : thisArch;
+	return `${data.pkgname}-${getPkgVersion(data)}-${arch}.pkg.tar.zst`;
 }
 
 function getPkgFile(name: string) {
@@ -735,11 +741,7 @@ async function make(names: string[]) {
 	const builtNames: string[] = [];
 	for (const name of names) {
 		const p = parsePkgData(getPkgFile(name)!);
-		if (
-			existsSync(
-				`${buildPath}/${name}/${name}-${getPkgVersion(p)}-${thisArch}.pkg.tar.zst`,
-			)
-		) {
+		if (existsSync(`${buildPath}/${name}/${getPkgName(p)}`)) {
 			builtNames.push(name);
 			continue;
 		}
@@ -898,8 +900,7 @@ async function update() {
 		const p = getPkgFile(i);
 		if (!p) continue;
 		const data = parsePkgData(p);
-		const x = `${data.pkgname}-${getPkgVersion(data)}-${thisArch}.pkg.tar.zst`;
-		pkgFiles.push(`${buildPath}/${i}/${x}`);
+		pkgFiles.push(`${buildPath}/${i}/${getPkgName(data)}`);
 	}
 
 	if (pkgFiles.length) {
