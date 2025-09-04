@@ -1,6 +1,6 @@
 import { checkbox, confirm } from "@inquirer/prompts";
-import { mprogress, progress } from "@ryweal/progress";
 import { copySync, ensureDirSync } from "@std/fs";
+import { changeOut } from "./simple_tui.ts";
 
 export { parsePkgData };
 
@@ -576,62 +576,84 @@ async function downloadAssets(
 		}
 	}
 
-	const { promise, resolve: re } = Promise.withResolvers();
+	const changeText = changeOut();
+
+	function mprogress(ps: ReturnType<typeof progress>[]) {
+		changeText.update(ps.map((i) => i.toString()).join("\n"));
+	}
+
+	function progress(x: string) {
+		let t = "";
+		let _all = 0;
+		return {
+			update: (ic: number, iall?: number) => {
+				const w = 40;
+				const all = iall ?? _all;
+				const c = Math.min(all, ic);
+				const sw = all === 0 ? 0 : Math.round((c / all) * w);
+				const s = `|${"#".repeat(sw)}${" ".repeat(w - sw)}| ${(c / 1024 ** 2).toFixed(2)}MB/${(all / 1024 ** 2).toFixed(2)}MB ${x}`;
+				t = s;
+				_all = all;
+				mprogress(ps);
+			},
+			toString: () => t,
+		};
+	}
+
 	let ps: ReturnType<typeof progress>[] = [];
+
+	async function runConcurrentTasks(concurrency: number) {
+		const workers = [];
+
+		for (let i = 0; i < concurrency; i++) {
+			workers.push(
+				(async () => {
+					while (httpL.length > 0) {
+						await newDl();
+					}
+				})(),
+			);
+		}
+
+		await Promise.all(workers);
+	}
 
 	async function newDl() {
 		if (httpL.length === 0) {
-			re(null);
 			return;
 		}
 		const { fileUrl, filename, name, path } = httpL.pop()!;
 		const nurl = urlMapping(fileUrl, "http");
 
-		let p: ReturnType<typeof progress> | null = null;
+		const p = progress(`${filename} ${name}`);
+		p.update(0, 0);
 
-		// \n${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}
+		ps.push(p);
 
 		try {
 			await fetchFile(
 				nurl,
 				path,
-				(all) => {
-					p = progress(`[[bar]] [[count]]/[[total]] [[rate]] [[eta]]\n`, {
-						total: all,
-						unit: "MB",
-						unitScale: 1024 * 1024,
-						shape: {
-							bar: {
-								start: "|",
-								end: "|",
-								completed: "█",
-								pending: " ",
-							},
-							total: { mask: "###.##" },
-							count: { mask: "###.##" },
-						},
-					});
-
-					ps.push(p);
-					mprogress(ps);
-				},
-				(l) => {
-					p?.update(l);
+				() => {},
+				(l, a) => {
+					p.update(l, a);
 				},
 			);
 			deCount(name);
+			p.update(Infinity);
+			changeText.log(p.toString());
 		} catch (error) {
-			console.error(`Error fetching ${nurl}:`, error);
+			changeText.log(
+				// @ts-ignore
+				`Error fetching ${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}:\n ${error.message}`,
+			);
+		} finally {
+			ps = ps.filter((i) => i !== p);
+			mprogress(ps);
 		}
-
-		ps = ps.filter((i) => i !== p);
-		mprogress(ps);
-		newDl();
 	}
 
-	for (const _i of new Array(3).fill(0)) newDl();
-
-	await promise;
+	await runConcurrentTasks(3);
 
 	for (const { name, fileUrl, filename, path } of gitL) {
 		const nurl = urlMapping(fileUrl, "git");
@@ -682,7 +704,9 @@ async function make(names: string[]) {
 	for (const name of names) {
 		const p = parsePkgData(getPkgFile(name)!);
 		if (
-			existsSync(`${buildPath}/${name}/${name}-${getPkgVersion(p)}.pkg.tar.zst`)
+			existsSync(
+				`${buildPath}/${name}/${name}-${getPkgVersion(p)}-${thisArch}.pkg.tar.zst`,
+			)
 		) {
 			builtNames.push(name);
 			continue;
