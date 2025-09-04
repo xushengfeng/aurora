@@ -71,6 +71,22 @@ type UrlX = {
 	type: "http" | "git";
 };
 
+const sumK = [
+	"b2",
+	"sha512",
+	"sha384",
+	"sha256",
+	"sha224",
+	"sha1",
+	"md5",
+	"ck",
+] as const;
+
+type SumsObj = Record<
+	`${(typeof sumK)[number]}sums${"_x86_64" | ""}`,
+	string[]
+>;
+
 const aurUrl = "https://aur.archlinux.org/rpc/?v=5";
 const aurPackageUrl = "https://aur.archlinux.org/$pkgname.git";
 const aurPackageUrlKey = "$pkgname";
@@ -344,39 +360,78 @@ async function getAurPackage(name: string) {
 
 function parsePkgData(data: string) {
 	const pkgbuild: {
-		pkgname: string;
+		keyName: string;
 		pkgver: string;
 		pkgrel: string;
 		epoch?: string;
+		pkgdesc?: string;
+		url?: string;
+		license?: string;
+		groups?: string[];
 		source: string[];
 		source_x86_64?: string[];
 		validpgpkeys?: string[];
 		makedepends?: string[];
-		depends?: string[];
+		depends?: string[]; // todo =
+		checkdepends?: string[];
+		optdepends?: string[]; // :
 		arch?: string[];
-	} & Record<string, string | string[]> = {
-		pkgname: "",
+		provides?: string[];
+		conflicts?: string[];
+		replaces?: string[];
+		children: {
+			pkgname: string;
+			arch: string[];
+		}[];
+	} & Partial<SumsObj> = {
+		keyName: "",
 		pkgver: "",
 		pkgrel: "",
 		source: [],
+		children: [],
 	};
-	const justStr = ["pkgname", "pkgver", "pkgrel"];
-	for (const i of data.split("\n")) {
-		const eq = i.indexOf("=");
-		if (eq === -1) continue;
-		const key = i.slice(0, eq).trim();
-		const value = i.slice(eq + 1).trim();
-		if (key && value) {
-			const old = pkgbuild[key];
-			if (Array.isArray(old)) {
-				old.push(value);
-			} else if (old) {
-				pkgbuild[key] = [old, value];
-			} else if (!justStr.includes(key)) {
-				pkgbuild[key] = [value];
-			} else {
-				pkgbuild[key] = [value];
+	const justStr = [
+		"pkgname",
+		"pkgver",
+		"pkgrel",
+		"epoch",
+		"pkgdesc",
+		"url",
+		"license",
+	];
+	for (const [index, x] of data.split("\n\n").entries()) {
+		const xo: Record<string, string | string[]> = {};
+		for (const i of x.trim().split("\n")) {
+			if (i.startsWith("pkgbase")) {
+				xo.keyName = i.slice("pkgbase = ".length).trim();
+				continue;
 			}
+			const eq = i.indexOf("=");
+			if (eq === -1) continue;
+			const key = i.slice(0, eq).trim();
+			const value = i.slice(eq + 1).trim();
+
+			if (key && value) {
+				const old = xo[key];
+				if (Array.isArray(old)) {
+					old.push(value);
+				} else if (old) {
+					xo[key] = [old, value];
+				} else if (!justStr.includes(key)) {
+					xo[key] = [value];
+				} else {
+					xo[key] = value;
+				}
+			}
+		}
+		if (index === 0) {
+			for (const k of Object.keys(xo)) {
+				// @ts-ignore
+				pkgbuild[k] = xo[k];
+			}
+		} else {
+			// @ts-ignore
+			pkgbuild.children[index - 1] = xo;
 		}
 	}
 	return pkgbuild;
@@ -389,7 +444,7 @@ function getPkgVersion(data: ReturnType<typeof parsePkgData>) {
 	return v;
 }
 
-function getPkgName(data: ReturnType<typeof parsePkgData>) {
+function getPkgNames(data: ReturnType<typeof parsePkgData>): string[] {
 	const arch = data.arch?.includes("any") ? "any" : thisArch;
 	return `${data.pkgname}-${getPkgVersion(data)}-${arch}.pkg.tar.zst`;
 }
@@ -470,19 +525,9 @@ function parsePkgUrls(name: string) {
 }
 function parsePkgSums(name: string) {
 	const data = parsePkgData(getPkgFile(name)!);
-	const sumK = [
-		"b2",
-		"sha512",
-		"sha384",
-		"sha256",
-		"sha224",
-		"sha1",
-		"md5",
-		"ck",
-	];
 	const s = sumK.find((i) => Object.keys(data).find((x) => x.startsWith(i)));
 	if (!s) return { type: "", sum: [] };
-	const ss = `${s}sums`;
+	const ss = `${s}sums` as const;
 	const sum = (data[ss] as string[]) ?? [];
 	const sum2 = (data[`${ss}_${thisArch}`] as string[]) ?? [];
 	return {
@@ -733,7 +778,7 @@ async function make(names: string[]) {
 	const builtNames: string[] = [];
 	for (const name of names) {
 		const p = parsePkgData(getPkgFile(name)!);
-		if (existsSync(`${buildPath}/${name}/${getPkgName(p)}`)) {
+		if (existsSync(`${buildPath}/${name}/${getPkgNames(p)}`)) {
 			builtNames.push(name);
 			continue;
 		}
@@ -892,7 +937,7 @@ async function update() {
 		const p = getPkgFile(i);
 		if (!p) continue;
 		const data = parsePkgData(p);
-		pkgFiles.push(`${buildPath}/${i}/${getPkgName(data)}`);
+		pkgFiles.push(`${buildPath}/${i}/${getPkgNames(data)}`);
 	}
 
 	if (pkgFiles.length) {
