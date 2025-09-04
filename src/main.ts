@@ -713,6 +713,27 @@ async function downloadAssets(
 				// @ts-ignore
 				`Error fetching ${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}:\n ${error.message}`,
 			);
+			if (nurl !== fileUrl) {
+				changeText.log(`Now try download from source url...`);
+				try {
+					await fetchFile(
+						fileUrl,
+						path,
+						() => {},
+						(l, a) => {
+							p.update(l, a);
+						},
+					);
+					deCount(name);
+					p.update(Infinity);
+					changeText.log(p.toString());
+				} catch (error) {
+					changeText.log(
+						// @ts-ignore
+						`Error fetching ${name} ${filename} from ${fileUrl}:\n ${error.message}`,
+					);
+				}
+			}
 		} finally {
 			ps = ps.filter((i) => i !== p);
 			mprogress(ps);
