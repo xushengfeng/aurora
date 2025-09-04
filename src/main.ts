@@ -449,9 +449,18 @@ function getPkgVersion(data: ReturnType<typeof parsePkgData>) {
 	return v;
 }
 
+function getArch(arch: string[] | undefined, defaultArch = thisArch) {
+	if (!arch || arch.length === 0) return defaultArch;
+	if (arch.includes("any")) return "any";
+	if (arch.includes(defaultArch)) return defaultArch;
+	return arch[0];
+}
+
 function getPkgNames(data: ReturnType<typeof parsePkgData>): string[] {
-	const arch = data.arch?.includes("any") ? "any" : thisArch;
-	return `${data.pkgname}-${getPkgVersion(data)}-${arch}.pkg.tar.zst`;
+	return data.children.map(
+		(i) =>
+			`${i.pkgname}-${getPkgVersion(data)}-${getArch(i.arch, getArch(data.arch))}.pkg.tar.zst`,
+	);
 }
 
 function getPkgFile(name: string) {
@@ -783,7 +792,7 @@ async function make(names: string[]) {
 	const builtNames: string[] = [];
 	for (const name of names) {
 		const p = parsePkgData(getPkgFile(name)!);
-		if (existsSync(join(buildPath, name, getPkgNames(p)))) {
+		if (getPkgNames(p).every((i) => existsSync(join(buildPath, name, i)))) {
 			builtNames.push(name);
 			continue;
 		}
@@ -845,7 +854,7 @@ async function make(names: string[]) {
 		}).spawn();
 		await c.output();
 	} else {
-		return [];
+		// return [];
 	}
 
 	for (const [i, name] of buildList.entries()) {
@@ -942,7 +951,9 @@ async function update() {
 		const p = getPkgFile(i);
 		if (!p) continue;
 		const data = parsePkgData(p);
-		pkgFiles.push(join(buildPath, i, getPkgNames(data)));
+		for (const x of getPkgNames(data)) {
+			pkgFiles.push(join(buildPath, i, x));
+		}
 	}
 
 	if (pkgFiles.length) {
