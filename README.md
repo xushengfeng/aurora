@@ -32,3 +32,13 @@ deno run -A src/main.ts
 ```shell
 deno run build
 ```
+
+你可以把`dist/aurora` 复制到`~/.local/bin`下
+
+## TODO
+
+现在只有更新功能
+
+-   [ ] 添加软件
+-   [ ] tab 补全支持
+-   [ ] 兼容 pacman
