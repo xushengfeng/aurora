@@ -464,16 +464,8 @@ function cpMeta(name: string) {
 		}
 	}
 }
-async function parsePkgUrls(name: string) {
-	const fromP = `${pkgbuildPath}/${name}`;
-	const toP = `${buildPath}/${name}/`;
+function parsePkgUrls(name: string) {
 	const data = parsePkgData(getPkgFile(name)!);
-	for (const i of Deno.readDirSync(fromP)) {
-		if (i.name === ".git") continue;
-		await new Deno.Command("cp", {
-			args: [`${fromP}/${i.name}`, toP, "-r"],
-		}).output();
-	}
 	return data.source.concat((data[`source_${thisArch}`] ?? []) as string[]);
 }
 function parsePkgSums(name: string) {
@@ -884,7 +876,7 @@ async function update() {
 	}[] = [];
 	for (const name of nl) {
 		cpMeta(name);
-		const url = await parsePkgUrls(name);
+		const url = parsePkgUrls(name);
 		const { type, sum } = parsePkgSums(name);
 		console.log(`found ${url.length} assets for ${name}`);
 		for (const [n, i] of url.entries())
