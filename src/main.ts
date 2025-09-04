@@ -909,7 +909,10 @@ async function update() {
 			stdout: "inherit",
 			stderr: "inherit",
 		}).spawn();
-		await c.output();
+		const { success } = await c.output();
+		if (!success) {
+			console.log(`Some packages failed to install. ${sl2.join(" ")}`);
+		}
 	}
 
 	if (sl2.length !== nl.length)
