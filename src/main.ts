@@ -813,50 +813,6 @@ async function make(names: string[], data: Map<string, PkgData>) {
 		}
 	}
 
-	const depMap = new Map<string, Set<string>>();
-	function addDep(name: string, dep: string) {
-		const l = depMap.get(dep) ?? new Set();
-		l.add(name);
-		depMap.set(dep, l);
-	}
-	for (const name of buildList) {
-		const p = data.get(name)!;
-		for (const i of p.makedepends ?? []) {
-			addDep(name, i);
-		}
-		for (const i of p.depends ?? []) {
-			addDep(name, i);
-		}
-	}
-	const hadInstalled = await checkPkgBuildDeps(Array.from(depMap.keys())); // todo with version
-	const needInstall = Array.from(depMap.keys()).filter(
-		(i) => !hadInstalled.includes(i),
-	);
-	const inOfficial = await checkPkgInOfficial(needInstall);
-	console.log(
-		"need install deps:",
-		needInstall
-			.map(
-				(i) =>
-					`${i}${inOfficial.includes(i) ? "" : " (AUR)"} (${Array.from(depMap.get(i)!).join(" ")})`,
-			)
-			.join(", "),
-	);
-	const installDep = await confirm({
-		message: `Install the dependencies?`,
-	});
-	if (installDep && inOfficial.length) {
-		const c = new Deno.Command("sudo", {
-			args: ["pacman", "-S", "--noconfirm", ...inOfficial], // todo aur
-			stdin: "inherit",
-			stdout: "inherit",
-			stderr: "inherit",
-		}).spawn();
-		await c.output();
-	} else {
-		// return [];
-	}
-
 	for (const [i, name] of buildList.entries()) {
 		console.log(`Building ${name}...(${i + 1}/${buildList.length})`);
 		const p = data.get(name)!;
@@ -892,19 +848,21 @@ async function make(names: string[], data: Map<string, PkgData>) {
 	return okNames;
 }
 
-async function update() {
-	console.log("checking for updates...");
+async function installWithOutCheckDep(
+	names: { name: string; version: string; official: boolean }[],
+) {
+	const of = names.filter((i) => i.official).map((i) => i.name);
+	if (of.length) {
+		const c = new Deno.Command("sudo", {
+			args: ["pacman", "-S", "--noconfirm", ...of], // todo aur
+			stdin: "inherit",
+			stdout: "inherit",
+			stderr: "inherit",
+		}).spawn();
+		await c.output();
+	}
 
-	const l = await getNewPackages();
-	const _nl = await checkbox({
-		message: "Select packages to update",
-		choices: l.map((p) => ({
-			name: `${p.local.name} ${p.local.version} -> ${p.remote.Version}`,
-			value: p.remote.PackageBase,
-		})),
-	});
-
-	const nl = Array.from(new Set(_nl));
+	const nl = names.map((i) => i.name);
 
 	ensureDirSync(basePath);
 	ensureDirSync(pkgbuildPath);
@@ -914,14 +872,8 @@ async function update() {
 		console.log(`get ${name}...(${i + 1}/${nl.length})`);
 		const p = getPkgFile(name);
 		if (p) {
-			console.log("find", name);
 			const data = parsePkgData(p);
-			// todo cache
-			if (
-				l.find((x) => x.remote.Name === name)?.remote.Version ===
-				getPkgVersion(data)
-			) {
-				console.log(`${name} PKGBUILD is downloaded.`);
+			if (names.find((x) => x.name === name)?.version === getPkgVersion(data)) {
 				continue;
 			}
 		}
@@ -981,6 +933,86 @@ async function update() {
 			"Some packages failed to build.",
 			nl.filter((x) => !sl2.includes(x)).join(", "),
 		);
+}
+
+async function update() {
+	console.log("checking for updates...");
+
+	const l = await getNewPackages();
+
+	// todo get dkg diff like out of date
+
+	const _nl = await checkbox({
+		message: "Select packages to update",
+		choices: l.map((p) => ({
+			name: `${p.local.name} ${p.local.version} -> ${p.remote.Version}`,
+			value: p,
+		})),
+	});
+
+	const ps = new Set<string>();
+
+	for (const {
+		remote: { PackageBase },
+	} of _nl) {
+		ps.add(PackageBase);
+	}
+
+	const depMap = new Map<string, Set<string>>();
+	function addDep(name: string, dep: string) {
+		const l = depMap.get(dep) ?? new Set();
+		l.add(name);
+		depMap.set(dep, l);
+	}
+	for (const {
+		local: { name },
+		remote: { MakeDepends, Depends },
+	} of _nl) {
+		for (const i of MakeDepends ?? []) {
+			addDep(name, i);
+		}
+		for (const i of Depends ?? []) {
+			addDep(name, i);
+		}
+	}
+	const hadInstalled = await checkPkgBuildDeps(Array.from(depMap.keys())); // todo with version check aur update
+	const needInstall = Array.from(depMap.keys()).filter(
+		(i) => !hadInstalled.includes(i),
+	);
+	const inOfficial = await checkPkgInOfficial(needInstall);
+	if (needInstall.length) {
+		console.log(
+			"need install deps:",
+			needInstall
+				.map(
+					(i) =>
+						`${i}${inOfficial.includes(i) ? "" : " (AUR)"} (${Array.from(depMap.get(i)!).join(" ")})`,
+				)
+				.join(", "),
+		);
+		const installDep = await confirm({
+			message: `Install?`,
+		});
+		if (!installDep) return;
+		await installWithOutCheckDep(
+			needInstall.map((i) => ({
+				name: i,
+				version:
+					l.find((x) => x.remote.PackageBase === i)?.remote.Version ?? "",
+				official: inOfficial.includes(i),
+			})),
+		);
+	}
+
+	const nl = Array.from(ps);
+
+	await installWithOutCheckDep(
+		nl.map((i) => ({
+			name: i,
+			version: l.find((x) => x.remote.PackageBase === i)?.remote.Version ?? "",
+			official: false,
+		})),
+	);
 }
 
 update();
