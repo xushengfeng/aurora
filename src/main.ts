@@ -88,6 +88,8 @@ type SumsObj = Record<
 	string[]
 >;
 
+type PkgData = ReturnType<typeof parsePkgData>;
+
 const aurUrl = "https://aur.archlinux.org/rpc/?v=5";
 const aurPackageUrl = "https://aur.archlinux.org/$pkgname.git";
 const aurPackageUrlKey = "$pkgname";
@@ -442,7 +444,7 @@ function parsePkgData(data: string) {
 	return pkgbuild;
 }
 
-function getPkgVersion(data: ReturnType<typeof parsePkgData>) {
+function getPkgVersion(data: PkgData) {
 	let v = data.pkgver;
 	if (data.epoch) v = `${data.epoch}:${v}`;
 	if (data.pkgrel) v = `${v}-${data.pkgrel}`;
@@ -456,7 +458,7 @@ function getArch(arch: string[] | undefined, defaultArch = thisArch) {
 	return arch[0];
 }
 
-function getPkgNames(data: ReturnType<typeof parsePkgData>): string[] {
+function getPkgNames(data: PkgData): string[] {
 	return data.children.map(
 		(i) =>
 			`${i.pkgname}-${getPkgVersion(data)}-${getArch(i.arch, getArch(data.arch))}.pkg.tar.zst`,
@@ -533,12 +535,10 @@ function cpMeta(name: string) {
 		}
 	}
 }
-function parsePkgUrls(name: string) {
-	const data = parsePkgData(getPkgFile(name)!);
+function getPkgUrls(data: PkgData) {
 	return data.source.concat((data[`source_${thisArch}`] ?? []) as string[]);
 }
-function parsePkgSums(name: string) {
-	const data = parsePkgData(getPkgFile(name)!);
+function getPkgSums(data: PkgData) {
 	const s = sumK.find((i) => Object.keys(data).find((x) => x.startsWith(i)));
 	if (!s) return { type: "", sum: [] };
 	const ss = `${s}sums` as const;
@@ -784,14 +784,14 @@ async function checkPkgInOfficial(names: string[]) {
 	return l;
 }
 
-async function make(names: string[]) {
+async function make(names: string[], data: Map<string, PkgData>) {
 	const okNames: string[] = [];
 
 	const buildList: string[] = [];
 
 	const builtNames: string[] = [];
 	for (const name of names) {
-		const p = parsePkgData(getPkgFile(name)!);
+		const p = data.get(name)!;
 		if (getPkgNames(p).every((i) => existsSync(join(buildPath, name, i)))) {
 			builtNames.push(name);
 			continue;
@@ -820,7 +820,7 @@ async function make(names: string[]) {
 		depMap.set(dep, l);
 	}
 	for (const name of buildList) {
-		const p = parsePkgData(getPkgFile(name)!);
+		const p = data.get(name)!;
 		for (const i of p.makedepends ?? []) {
 			addDep(name, i);
 		}
@@ -859,7 +859,7 @@ async function make(names: string[]) {
 
 	for (const [i, name] of buildList.entries()) {
 		console.log(`Building ${name}...(${i + 1}/${buildList.length})`);
-		const p = parsePkgData(getPkgFile(name)!);
+		const p = data.get(name)!;
 		if (p.validpgpkeys) {
 			const k: string[] = [];
 			for (const i of p.validpgpkeys) {
@@ -928,29 +928,36 @@ async function update() {
 		await getAurPackage(name);
 	}
 	// todo view edit
+	const parseData = new Map<string, PkgData>();
 	const urls: {
 		name: string;
 		url: string;
 		sum: { type: string; value: string };
 	}[] = [];
 	for (const name of nl) {
+		parseData.set(name, parsePkgData(getPkgFile(name)!));
+	}
+	function getData(name: string): PkgData {
+		const x = parseData.get(name);
+		if (!x) throw `Cant find ${name}`;
+		return x;
+	}
+	for (const name of nl) {
 		cpMeta(name);
-		const url = parsePkgUrls(name);
-		const { type, sum } = parsePkgSums(name);
+		const url = getPkgUrls(getData(name));
+		const { type, sum } = getPkgSums(getData(name));
 		console.log(`found ${url.length} assets for ${name}`);
 		for (const [n, i] of url.entries())
 			urls.push({ name, url: i, sum: { type, value: sum[n] ?? "" } });
 	}
 	const sl = await downloadAssets(urls);
-	const sl2 = await make(sl);
+	const sl2 = await make(sl, parseData);
 
 	console.log("install");
 
 	const pkgFiles: string[] = [];
 	for (const i of sl2) {
-		const p = getPkgFile(i);
-		if (!p) continue;
-		const data = parsePkgData(p);
+		const data = getData(i);
 		for (const x of getPkgNames(data)) {
 			pkgFiles.push(join(buildPath, i, x));
 		}
