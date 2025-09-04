@@ -579,7 +579,15 @@ async function downloadAssets(
 	const changeText = changeOut();
 
 	function mprogress(ps: ReturnType<typeof progress>[]) {
-		changeText.update(ps.map((i) => i.toString()).join("\n"));
+		const all = urls.length;
+		const run = all - counts.values().reduce((a, b) => a + b, 0);
+		changeText.update(
+			`${ps.map((i) => i.toString()).join("\n")}\n${p(Math.round((run / all) * 40), 40)} ${run}/${all}`,
+		);
+	}
+
+	function p(i: number, a: number) {
+		return `|${"#".repeat(i)}${" ".repeat(a - i)}|`;
 	}
 
 	function progress(x: string) {
@@ -590,8 +598,8 @@ async function downloadAssets(
 				const w = 40;
 				const all = iall ?? _all;
 				const c = Math.min(all, ic);
-				const sw = all === 0 ? 0 : Math.round((c / all) * w);
-				const s = `|${"#".repeat(sw)}${" ".repeat(w - sw)}| ${(c / 1024 ** 2).toFixed(2)}MB/${(all / 1024 ** 2).toFixed(2)}MB ${x}`;
+				const sw = all === 0 ? w : Math.round((c / all) * w);
+				const s = `${p(sw, w)} ${(c / 1024 ** 2).toFixed(2)}MB/${(all / 1024 ** 2).toFixed(2)}MB ${x}`;
 				t = s;
 				_all = all;
 				mprogress(ps);
