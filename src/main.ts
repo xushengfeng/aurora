@@ -294,52 +294,47 @@ async function fetchGit(
 		await command.output();
 	}
 
-	try {
-		if (op?.force) {
-			try {
-				Deno.removeSync(path, { recursive: true });
-			} catch {}
-		} else if (await exists(path)) {
-			const stat = await Deno.stat(path);
-			if (stat.isDirectory) {
-				await setUrl(url);
-				const command = new Deno.Command("git", {
-					args: ["pull"],
-					stdout: showOutput ? "inherit" : "piped",
-					stderr: "piped",
-					cwd: path,
-				});
+	if (op?.force) {
+		try {
+			Deno.removeSync(path, { recursive: true });
+		} catch {}
+	} else if (await exists(path)) {
+		const stat = await Deno.stat(path);
+		if (stat.isDirectory) {
+			await setUrl(url);
+			const command = new Deno.Command("git", {
+				args: ["pull"],
+				stdout: showOutput ? "inherit" : "piped",
+				stderr: "piped",
+				cwd: path,
+			});
 
-				const { stderr } = await command.output();
+			const { stderr } = await command.output();
+			if (stderr.length > 0) {
+				Deno.removeSync(path, { recursive: true });
+			} else {
 				await setUrl(srcUrl);
-				if (stderr.length > 0) {
-					Deno.removeSync(path, { recursive: true });
-				} else return true;
+				return true;
 			}
 		}
-
-		// 执行 git clone 命令
-		const command = new Deno.Command("git", {
-			args: ["clone", url, path].concat(simple ? ["--depth", "1"] : []),
-			stderr: "piped",
-		});
-
-		const { code, stderr } = await command.output();
-		await setUrl(srcUrl);
-
-		if (stderr.length > 0) {
-			console.error(new TextDecoder().decode(stderr));
-		}
-
-		if (code !== 0) {
-			throw new Error(`Git clone failed with exit code: ${code}`);
-		}
-		return true;
-	} catch (error) {
-		// @ts-expect-error
-		console.error(`克隆仓库失败: ${error.message}`);
-		return false;
 	}
+
+	// 执行 git clone 命令
+	const command = new Deno.Command("git", {
+		args: ["clone", url, path].concat(simple ? ["--depth", "1"] : []),
+		stderr: showOutput ? "inherit" : "piped",
+		stdout: showOutput ? "inherit" : "piped",
+	});
+
+	const { output, status } = command.spawn();
+
+	if (!(await status).success) {
+		console.error(new TextDecoder().decode((await output()).stderr));
+	} else {
+		await setUrl(srcUrl);
+	}
+
+	return true;
 }
 
 async function getAurPackage(name: string) {
@@ -415,6 +410,7 @@ function parseSourceUrl(url: string): UrlX {
 			name = url
 				.split("/")
 				.at(-1)!
+				.replace(/#.*$/, "")
 				.replace(/\.git.*$/, "");
 		} else {
 			name = url.split("/").at(-1)!;
@@ -425,7 +421,10 @@ function parseSourceUrl(url: string): UrlX {
 	}
 
 	if (u.startsWith("git+")) {
-		u = u.slice(4).replace(/\.git.*$/, "");
+		u = u.slice(4);
+		const a = u.split("/").at(-1)!;
+		const aa = u.split("/").slice(0, -1).join("/");
+		u = `${aa}/${a.replace(/#.*$/, "").replace(/\.git.*$/, "")}`;
 		type = "git";
 	}
 
@@ -665,9 +664,6 @@ async function downloadAssets(
 
 	for (const { name, fileUrl, filename, path } of gitL) {
 		const nurl = urlMapping(fileUrl, "git");
-		console.log(
-			`${name} ${filename} from git ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}`,
-		);
 		try {
 			await fetchGit(nurl, path, {
 				simple: false,
@@ -676,7 +672,10 @@ async function downloadAssets(
 			});
 			deCount(name);
 		} catch (error) {
-			console.error(`Error fetching ${nurl}:`, error);
+			console.error(
+				`Error fetching ${name} ${filename} from git ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}:\n`,
+				error,
+			);
 		}
 	}
 
