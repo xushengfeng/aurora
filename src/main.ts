@@ -1,5 +1,6 @@
 import { checkbox, confirm } from "@inquirer/prompts";
 import { copySync, ensureDirSync } from "@std/fs";
+import { join } from "@std/path";
 import { changeOut } from "./simple_tui.ts";
 
 export { parsePkgData };
@@ -90,9 +91,13 @@ type SumsObj = Record<
 const aurUrl = "https://aur.archlinux.org/rpc/?v=5";
 const aurPackageUrl = "https://aur.archlinux.org/$pkgname.git";
 const aurPackageUrlKey = "$pkgname";
-const basePath = `${Deno.env.get("XDG_CACHE_HOME") ?? Deno.env.get("HOME")}/.cache/myaur`;
-const pkgbuildPath = `${basePath}/pkgbuild`;
-const buildPath = `${basePath}/build`;
+const basePath = join(
+	(Deno.env.get("XDG_CACHE_HOME") ?? Deno.env.get("HOME")) || "/",
+	".cache",
+	"myaur",
+);
+const pkgbuildPath = join(basePath, "pkgbuild");
+const buildPath = join(basePath, "build");
 
 const thisArch = "x86_64";
 
@@ -450,7 +455,7 @@ function getPkgNames(data: ReturnType<typeof parsePkgData>): string[] {
 }
 
 function getPkgFile(name: string) {
-	const p = `${pkgbuildPath}/${name}/.SRCINFO`;
+	const p = join(pkgbuildPath, name, ".SRCINFO");
 	if (existsSync(p, { isFile: true })) {
 		try {
 			return Deno.readTextFileSync(p);
@@ -507,13 +512,13 @@ function parseSourceUrl(url: string): UrlX {
 }
 
 function cpMeta(name: string) {
-	const fromP = `${pkgbuildPath}/${name}`;
-	const toP = `${buildPath}/${name}/`;
+	const fromP = join(pkgbuildPath, name);
+	const toP = join(buildPath, name);
 	ensureDirSync(toP);
 	for (const i of Deno.readDirSync(fromP)) {
 		if (i.name === ".git") continue;
 		try {
-			copySync(`${fromP}/${i.name}`, `${toP}/${i.name}`, { overwrite: true });
+			copySync(join(fromP, i.name), join(toP, i.name), { overwrite: true });
 		} catch (error) {
 			console.warn(`can't cp ${fromP}/${i.name}`);
 		}
@@ -605,7 +610,7 @@ async function downloadAssets(
 			deCount(name);
 			continue;
 		}
-		const path = `${buildPath}/${name}/${filename}`;
+		const path = join(buildPath, name, filename);
 		if (type === "git") {
 			gitL.push({ name, url, filename, fileUrl, type, path });
 		} else if (type === "http") {
@@ -778,7 +783,7 @@ async function make(names: string[]) {
 	const builtNames: string[] = [];
 	for (const name of names) {
 		const p = parsePkgData(getPkgFile(name)!);
-		if (existsSync(`${buildPath}/${name}/${getPkgNames(p)}`)) {
+		if (existsSync(join(buildPath, name, getPkgNames(p)))) {
 			builtNames.push(name);
 			continue;
 		}
@@ -867,7 +872,7 @@ async function make(names: string[]) {
 		}
 		const x = new Deno.Command("makepkg", {
 			args: ["-f"],
-			cwd: `${buildPath}/${name}`,
+			cwd: join(buildPath, name),
 			stdout: "inherit",
 		}).spawn();
 		await x.output();
@@ -937,7 +942,7 @@ async function update() {
 		const p = getPkgFile(i);
 		if (!p) continue;
 		const data = parsePkgData(p);
-		pkgFiles.push(`${buildPath}/${i}/${getPkgNames(data)}`);
+		pkgFiles.push(join(buildPath, i, getPkgNames(data)));
 	}
 
 	if (pkgFiles.length) {
