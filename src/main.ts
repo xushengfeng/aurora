@@ -351,6 +351,8 @@ function parsePkgData(data: string) {
 		source: string[];
 		source_x86_64?: string[];
 		validpgpkeys?: string[];
+		makedepends?: string[];
+		depends?: string[];
 	} & Record<string, string | string[]> = {
 		pkgname: "",
 		pkgver: "",
@@ -702,6 +704,29 @@ async function gpgImport(key: string) {
 	return true;
 }
 
+async function checkPkgBuildDeps(names: string[]) {
+	const l: string[] = [];
+	for (const n of names) {
+		const command = new Deno.Command("pacman", {
+			args: ["-Q", n], // todo just single, some like sh show as bash
+		});
+		const { success } = await command.output();
+		if (success) l.push(n);
+	}
+	return l;
+}
+async function checkPkgInOfficial(names: string[]) {
+	const l: string[] = [];
+	for (const n of names) {
+		const command = new Deno.Command("pacman", {
+			args: ["-Si", n], // todo just single, some like sh show as bash
+		});
+		const { success } = await command.output();
+		if (success) l.push(n);
+	}
+	return l;
+}
+
 async function make(names: string[]) {
 	const okNames: string[] = [];
 
@@ -734,8 +759,53 @@ async function make(names: string[]) {
 			buildList.push(i);
 		}
 	}
+
+	const depMap = new Map<string, Set<string>>();
+	function addDep(name: string, dep: string) {
+		const l = depMap.get(dep) ?? new Set();
+		l.add(name);
+		depMap.set(dep, l);
+	}
 	for (const name of buildList) {
-		console.log(`Building ${name}...`);
+		const p = parsePkgData(getPkgFile(name)!);
+		for (const i of p.makedepends ?? []) {
+			addDep(name, i);
+		}
+		for (const i of p.depends ?? []) {
+			addDep(name, i);
+		}
+	}
+	const hadInstalled = await checkPkgBuildDeps(Array.from(depMap.keys())); // todo with version
+	const needInstall = Array.from(depMap.keys()).filter(
+		(i) => !hadInstalled.includes(i),
+	);
+	const inOfficial = await checkPkgInOfficial(needInstall);
+	console.log(
+		"need install deps:",
+		needInstall
+			.map(
+				(i) =>
+					`${i}${inOfficial.includes(i) ? "" : " (AUR)"} (${Array.from(depMap.get(i)!).join(" ")})`,
+			)
+			.join(", "),
+	);
+	const installDep = await confirm({
+		message: `Install the dependencies?`,
+	});
+	if (installDep && inOfficial.length) {
+		const c = new Deno.Command("sudo", {
+			args: ["pacman", "-S", "--noconfirm", ...inOfficial], // todo aur
+			stdin: "inherit",
+			stdout: "inherit",
+			stderr: "inherit",
+		}).spawn();
+		await c.output();
+	} else {
+		return [];
+	}
+
+	for (const [i, name] of buildList.entries()) {
+		console.log(`Building ${name}...(${i + 1}/${buildList.length})`);
 		const p = parsePkgData(getPkgFile(name)!);
 		if (p.validpgpkeys) {
 			const k: string[] = [];
