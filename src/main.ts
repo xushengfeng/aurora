@@ -1076,6 +1076,14 @@ async function installWithOutCheckDep(
 }
 
 async function update() {
+	const x = new Deno.Command("sudo", {
+		args: ["pacman", "-Syu"],
+		stdin: "inherit",
+		stdout: "inherit",
+		stderr: "inherit",
+	}).spawn();
+	await x.output();
+
 	console.log("checking for updates...");
 
 	const l = await getNewPackages();
