@@ -90,12 +90,38 @@ type SumsObj = Record<
 
 type PkgData = ReturnType<typeof parsePkgData>;
 
-const aurUrl = "https://aur.archlinux.org/rpc/?v=5";
-const githubAurUrl = "https://api.github.com/graphql";
-const githubToken = Deno.env.get("GITHUB_TOKEN") || "";
-const useGithubIndex = true;
-const useGithub = true;
-const aurPackageUrl = "https://aur.archlinux.org/$pkgname.git";
+type Config = {
+	"index.useGithub": boolean;
+	"index.url": string;
+	"github.token": string;
+	"pkg.useGithub": boolean;
+	"pkg.url": string;
+	"build.useMirror": boolean;
+	"build.mirrorList": typeof urlMappingList;
+};
+
+const config = (() => {
+	try {
+		const text = Deno.readTextFileSync(
+			join(
+				(Deno.env.get("XDG_CACHE_HOME") ?? Deno.env.get("HOME")) || "/",
+				".config",
+				"myaur",
+				"config.json",
+			),
+		);
+		return JSON.parse(text);
+	} catch (error) {}
+	return {};
+})() as Partial<Config>;
+
+const aurUrl = config["index.url"] ?? "https://aur.archlinux.org/rpc/?v=5";
+const githubAurUrl = config["index.url"] ?? "https://api.github.com/graphql";
+const githubToken = config["github.token"] ?? "";
+const useGithubIndex = config["index.useGithub"] ?? false;
+const useGithub = config["pkg.useGithub"] ?? false;
+const aurPackageUrl =
+	config["pkg.url"] ?? "https://aur.archlinux.org/$pkgname.git";
 const aurPackageUrlKey = "$pkgname";
 const aurPackageUrlGithub = "https://github.com/archlinux/aur.git";
 const basePath = join(
@@ -113,23 +139,25 @@ const urlMappingList: {
 	type: "git" | "http";
 	regex?: true;
 	to: string;
-}[] = [
-	{
-		src: "https://raw.githubusercontent.com",
-		type: "http",
-		to: "https://raw.gitmirror.com",
-	},
-	{
-		src: "https://github.com",
-		type: "http",
-		to: "https://hub.gitmirror.com/https://github.com",
-	},
-	{
-		src: "https://github.com",
-		type: "git",
-		to: "https://hub.gitmirror.com/https://github.com",
-	},
-];
+}[] = config["build.useMirror"]
+	? (config["build.mirrorList"] ?? [
+			{
+				src: "https://raw.githubusercontent.com",
+				type: "http",
+				to: "https://raw.gitmirror.com",
+			},
+			{
+				src: "https://github.com",
+				type: "http",
+				to: "https://hub.gitmirror.com/https://github.com",
+			},
+			{
+				src: "https://github.com",
+				type: "git",
+				to: "https://hub.gitmirror.com/https://github.com",
+			},
+		])
+	: [];
 
 async function exists(file: string, op?: { isFile: boolean }) {
 	try {
