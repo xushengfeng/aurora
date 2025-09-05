@@ -98,6 +98,7 @@ type Config = {
 	"pkg.url": string;
 	"build.useMirror": boolean;
 	"build.mirrorList": typeof urlMappingList;
+	"build.download.concurrent": number;
 };
 
 const appName = "aurora";
@@ -162,6 +163,8 @@ const urlMappingList: {
 				},
 			])
 		: [];
+
+const downloadConcurrent = config["build.download.concurrent"] ?? 4;
 
 async function exists(file: string, op?: { isFile: boolean }) {
 	try {
@@ -856,7 +859,7 @@ async function downloadAssets(
 		}
 	}
 
-	await runConcurrentTasks(3);
+	await runConcurrentTasks(downloadConcurrent);
 
 	for (const { name, fileUrl, filename, path } of gitL) {
 		const nurl = urlMapping(fileUrl, "git");

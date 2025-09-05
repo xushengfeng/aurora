@@ -66,6 +66,7 @@ type Config = {
         regex?: true;
         to: string;
     }[];
+    "build.download.concurrent": number; // 并行下载文件数，默认为4
 };
 ```
 
