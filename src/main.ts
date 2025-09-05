@@ -827,7 +827,7 @@ async function downloadAssets(
 		const { fileUrl, filename, name, path } = httpL.pop()!;
 		const nurl = urlMapping(fileUrl, "http");
 
-		const p = progress(`${filename} ${Color.pkgName(name)}`);
+		const p = progress(`${Color.filePath(filename)} ${Color.pkgName(name)}`);
 		p.update(0, 0);
 
 		ps.push(p);
@@ -845,13 +845,13 @@ async function downloadAssets(
 			p.update(Infinity);
 			changeText.log(p.toString());
 		} catch (error) {
-			changeText.log(
-				Color.error(
-					// @ts-ignore
-					`Error fetching ${Color.pkgName(name)} ${Color.filePath(filename)} from ${Color.url(nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`)}:\n ${error.message}`,
-				),
-			);
 			if (nurl !== fileUrl) {
+				changeText.log(
+					Color.warn(
+						// @ts-ignore
+						`can't fetching ${Color.pkgName(name)} ${Color.filePath(filename)} from ${Color.url(nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`)}:\n ${error.message}`,
+					),
+				);
 				changeText.log(`Now try download from source url...`);
 				try {
 					await fetchFile(
@@ -873,6 +873,13 @@ async function downloadAssets(
 						),
 					);
 				}
+			} else {
+				changeText.log(
+					Color.error(
+						// @ts-ignore
+						`can't fetching ${Color.pkgName(name)} ${Color.filePath(filename)} from ${Color.url(nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`)}:\n ${error.message}`,
+					),
+				);
 			}
 		} finally {
 			ps = ps.filter((i) => i !== p);
