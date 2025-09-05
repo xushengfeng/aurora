@@ -91,8 +91,13 @@ type SumsObj = Record<
 type PkgData = ReturnType<typeof parsePkgData>;
 
 const aurUrl = "https://aur.archlinux.org/rpc/?v=5";
+const githubAurUrl = "https://api.github.com/graphql";
+const githubToken = Deno.env.get("GITHUB_TOKEN") || "";
+const useGithubIndex = true;
+const useGithub = true;
 const aurPackageUrl = "https://aur.archlinux.org/$pkgname.git";
 const aurPackageUrlKey = "$pkgname";
+const aurPackageUrlGithub = "https://github.com/archlinux/aur.git";
 const basePath = join(
 	(Deno.env.get("XDG_CACHE_HOME") ?? Deno.env.get("HOME")) || "/",
 	".cache",
@@ -180,18 +185,86 @@ function getLocalAurList() {
 		});
 }
 
-async function getAurInfo(names: string[]) {
-	const url = new URL(aurUrl);
-	url.searchParams.set("type", "info");
-	for (const name of names) {
-		url.searchParams.append("arg[]", name);
+async function getAurInfo(
+	names: string[],
+	useGithub?: boolean,
+): Promise<AURMultiInfoResponse> {
+	if (!useGithub) {
+		const url = new URL(aurUrl);
+		url.searchParams.set("type", "info");
+		for (const name of names) {
+			url.searchParams.append("arg[]", name);
+		}
+		const res = await fetch(url.toString());
+		const data = (await res.json()) as AURMultiInfoResponse;
+		if (data.type === "error") {
+			throw new Error(data.error);
+		}
+		return data;
+	} else {
+		const graphqlUrl = githubAurUrl;
+		const graphql =
+			"{" +
+			names
+				.map(
+					(i, index) => `
+			a${index}: repository(name: "aur", owner: "archlinux") {
+				object(expression: "${i}:.SRCINFO") {
+					... on Blob {
+						text
+					}
+				}
+			}`,
+				)
+				.join("\n") +
+			"}";
+		const x = (await (
+			await fetch(graphqlUrl, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${githubToken}`,
+				},
+				body: JSON.stringify({ query: graphql }),
+			})
+		).json()) as {
+			data: Record<string, { object: { text: string } | null } | null>;
+		};
+
+		const r = Object.entries(x.data).flatMap(([, v]) => {
+			if (!v || !v.object || !v.object.text) {
+				return [];
+			}
+			const x = parsePkgData(v.object.text);
+			const base: PackageBaseInfo & Partial<PackageExtendedInfo> = {
+				ID: 0,
+				Name: x.keyName,
+				PackageBaseID: 0,
+				PackageBase: x.keyName,
+				Version: getPkgVersion(x),
+				Description: x.pkgdesc ?? "",
+				URL: x.url ?? "",
+				NumVotes: 0,
+				Popularity: 0,
+				OutOfDate: null,
+				Maintainer: null,
+				FirstSubmitted: 0,
+				LastModified: 0,
+				URLPath: "",
+				Depends: x.depends ?? [],
+				MakeDepends: x.makedepends ?? [],
+				OptDepends: x.optdepends ?? [],
+				CheckDepends: x.checkdepends ?? [],
+			};
+			return base;
+		});
+		return {
+			type: "multiinfo",
+			version: 5,
+			resultcount: r.length,
+			results: r,
+		} as AURMultiInfoResponse;
 	}
-	const res = await fetch(url.toString());
-	const data = (await res.json()) as AURMultiInfoResponse;
-	if (data.type === "error") {
-		throw new Error(data.error);
-	}
-	return data;
 }
 
 function vercmp(a: string, b: string): number {
@@ -205,9 +278,12 @@ function vercmp(a: string, b: string): number {
 
 async function getNewPackages() {
 	const localPackages = getLocalAurList();
-	const aurPackages = await getAurInfo(localPackages.map((p) => p.name));
+	const aurPackages = await getAurInfo(
+		localPackages.map((p) => p.name),
+		useGithubIndex,
+	);
 	const newPackages = aurPackages.results.flatMap((p) => {
-		const local = localPackages.find((lp) => lp.name === p.Name);
+		const local = localPackages.find((lp) => lp.name === p.Name); // todo eq?
 		return local && vercmp(p.Version, local.version) > 0
 			? [{ local, remote: p }]
 			: [];
@@ -302,6 +378,7 @@ async function fetchGit(
 		showOutput?: boolean;
 		srcUrl?: string;
 		force?: boolean;
+		flags?: string[];
 	},
 ): Promise<boolean> {
 	const simple = op?.simple ?? true;
@@ -344,7 +421,9 @@ async function fetchGit(
 
 	// 执行 git clone 命令
 	const command = new Deno.Command("git", {
-		args: ["clone", url, path].concat(simple ? ["--depth", "1"] : []),
+		args: ["clone", url, path]
+			.concat(simple ? ["--depth", "1"] : [])
+			.concat(op?.flags || []),
 		stderr: showOutput ? "inherit" : "piped",
 		stdout: showOutput ? "inherit" : "piped",
 	});
@@ -360,9 +439,14 @@ async function fetchGit(
 	return true;
 }
 
-async function getAurPackage(name: string) {
+async function getAurPackage(name: string, useGithub?: boolean) {
 	const url = aurPackageUrl.replace(aurPackageUrlKey, name);
-	await fetchGit(url, `${pkgbuildPath}/${name}`);
+	const dirPath = join(pkgbuildPath, name);
+	if (!useGithub) await fetchGit(url, dirPath);
+	else
+		await fetchGit(aurPackageUrlGithub, dirPath, {
+			flags: ["--branch", name, "--single-branch"],
+		});
 }
 
 function parsePkgData(data: string) {
@@ -898,7 +982,7 @@ async function installWithOutCheckDep(
 				continue;
 			}
 		}
-		await getAurPackage(name);
+		await getAurPackage(name, useGithub);
 	}
 	// todo view edit
 	const parseData = new Map<string, PkgData>();

@@ -4,7 +4,8 @@
 
 ## 特色
 
--   自带 GitHub 镜像
+-   自带 GitHub 镜像（这个是软件包构建时需要的）
+-   可使用 GitHub aur 镜像（这个是包索引，用于检查包更新， https://github.com/archlinux/aur ）
 -   支持方向键交互选择
 
 ## 使用
