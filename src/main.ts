@@ -100,13 +100,15 @@ type Config = {
 	"build.mirrorList": typeof urlMappingList;
 };
 
+const appName = "aurora";
+
 const config = (() => {
 	try {
 		const text = Deno.readTextFileSync(
 			join(
 				(Deno.env.get("XDG_CACHE_HOME") ?? Deno.env.get("HOME")) || "/",
 				".config",
-				"myaur",
+				appName,
 				"config.json",
 			),
 		);
@@ -123,11 +125,12 @@ const useGithub = config["pkg.useGithub"] ?? false;
 const aurPackageUrl =
 	config["pkg.url"] ?? "https://aur.archlinux.org/$pkgname.git";
 const aurPackageUrlKey = "$pkgname";
-const aurPackageUrlGithub = "https://github.com/archlinux/aur.git";
+const aurPackageUrlGithub =
+	config["pkg.url"] ?? "https://github.com/archlinux/aur.git";
 const basePath = join(
 	(Deno.env.get("XDG_CACHE_HOME") ?? Deno.env.get("HOME")) || "/",
 	".cache",
-	"myaur",
+	appName,
 );
 const pkgbuildPath = join(basePath, "pkgbuild");
 const buildPath = join(basePath, "build");
@@ -139,25 +142,26 @@ const urlMappingList: {
 	type: "git" | "http";
 	regex?: true;
 	to: string;
-}[] = config["build.useMirror"]
-	? (config["build.mirrorList"] ?? [
-			{
-				src: "https://raw.githubusercontent.com",
-				type: "http",
-				to: "https://raw.gitmirror.com",
-			},
-			{
-				src: "https://github.com",
-				type: "http",
-				to: "https://hub.gitmirror.com/https://github.com",
-			},
-			{
-				src: "https://github.com",
-				type: "git",
-				to: "https://hub.gitmirror.com/https://github.com",
-			},
-		])
-	: [];
+}[] =
+	(config["build.useMirror"] ?? true)
+		? (config["build.mirrorList"] ?? [
+				{
+					src: "https://raw.githubusercontent.com",
+					type: "http",
+					to: "https://raw.gitmirror.com",
+				},
+				{
+					src: "https://github.com",
+					type: "http",
+					to: "https://hub.gitmirror.com/https://github.com",
+				},
+				{
+					src: "https://github.com",
+					type: "git",
+					to: "https://hub.gitmirror.com/https://github.com",
+				},
+			])
+		: [];
 
 async function exists(file: string, op?: { isFile: boolean }) {
 	try {
