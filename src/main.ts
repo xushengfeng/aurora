@@ -1,6 +1,7 @@
 import { checkbox, confirm } from "@inquirer/prompts";
 import { copySync, ensureDirSync } from "@std/fs";
 import { join } from "@std/path";
+import { blue, bold, gray, green, red } from "yoctocolors";
 import { changeOut } from "./simple_tui.ts";
 
 export { parsePkgData };
@@ -165,6 +166,22 @@ const urlMappingList: {
 		: [];
 
 const downloadConcurrent = config["build.download.concurrent"] ?? 4;
+
+const Color = {
+	pkgName: (text: string) => bold(blue(text)),
+	pkgVer: (text: string) => bold(green(text)),
+	filePath: (text: string) => gray(text),
+	url: (text: string) => blue(text),
+	warn: (text: string) => `${bold(blue("Warning:"))} ${text}`,
+	error: (text: string) => `${bold(red("Error:"))} ${text}`,
+	task: (text: string) => bold(`${blue("::")} ${text}`),
+};
+
+const xLog = {
+	warn: (text: string) => console.log(Color.warn(text)),
+	error: (text: string) => console.log(Color.error(text)),
+	task: (text: string) => console.log(Color.task(text)),
+};
 
 async function exists(file: string, op?: { isFile: boolean }) {
 	try {
@@ -764,7 +781,7 @@ async function downloadAssets(
 	}
 
 	function p(i: number, a: number) {
-		return `|${"#".repeat(i)}${" ".repeat(a - i)}|`;
+		return `[${"#".repeat(i)}${"-".repeat(a - i)}]`;
 	}
 
 	function progress(x: string) {
@@ -810,7 +827,7 @@ async function downloadAssets(
 		const { fileUrl, filename, name, path } = httpL.pop()!;
 		const nurl = urlMapping(fileUrl, "http");
 
-		const p = progress(`${filename} ${name}`);
+		const p = progress(`${filename} ${Color.pkgName(name)}`);
 		p.update(0, 0);
 
 		ps.push(p);
@@ -829,8 +846,10 @@ async function downloadAssets(
 			changeText.log(p.toString());
 		} catch (error) {
 			changeText.log(
-				// @ts-ignore
-				`Error fetching ${name} ${filename} from ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}:\n ${error.message}`,
+				Color.error(
+					// @ts-ignore
+					`Error fetching ${Color.pkgName(name)} ${Color.filePath(filename)} from ${Color.url(nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`)}:\n ${error.message}`,
+				),
 			);
 			if (nurl !== fileUrl) {
 				changeText.log(`Now try download from source url...`);
@@ -848,8 +867,10 @@ async function downloadAssets(
 					changeText.log(p.toString());
 				} catch (error) {
 					changeText.log(
-						// @ts-ignore
-						`Error fetching ${name} ${filename} from ${fileUrl}:\n ${error.message}`,
+						Color.error(
+							// @ts-ignore
+							`Error fetching ${Color.pkgName(name)} ${Color.filePath(filename)} from ${Color.url(fileUrl)}:\n ${error.message}`,
+						),
 					);
 				}
 			}
@@ -871,9 +892,9 @@ async function downloadAssets(
 			});
 			deCount(name);
 		} catch (error) {
-			console.error(
-				`Error fetching ${name} ${filename} from git ${nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`}:\n`,
-				error,
+			xLog.error(
+				// @ts-ignore
+				`Error fetching ${Color.pkgName(name)} ${Color.filePath(filename)} from git ${Color.url(nurl === fileUrl ? fileUrl : `${fileUrl} -> ${nurl}`)}:\n${error.message}`,
 			);
 		}
 	}
@@ -940,7 +961,11 @@ async function make(names: string[], data: Map<string, PkgData>) {
 	const mustRebuild = builtNames.length
 		? await checkbox({
 				message: "Select packages to rebuild",
-				choices: builtNames.map((i) => ({ name: i, value: i, checked: true })),
+				choices: builtNames.map((i) => ({
+					name: Color.pkgName(i),
+					value: i,
+					checked: true,
+				})),
 			})
 		: [];
 	for (const i of names) {
@@ -954,7 +979,7 @@ async function make(names: string[], data: Map<string, PkgData>) {
 	}
 
 	for (const [i, name] of buildList.entries()) {
-		console.log(`Building ${name}...(${i + 1}/${buildList.length})`);
+		xLog.task(`Building ${name}...(${i + 1}/${buildList.length})`);
 		const p = data.get(name)!;
 		if (p.validpgpkeys) {
 			const k: string[] = [];
@@ -1008,8 +1033,9 @@ async function installWithOutCheckDep(
 	ensureDirSync(pkgbuildPath);
 	ensureDirSync(buildPath);
 
+	const x = changeOut();
 	for (const [i, name] of nl.entries()) {
-		console.log(`get ${name}...(${i + 1}/${nl.length})`);
+		x.update(`get ${Color.pkgName(name)}...(${i + 1}/${nl.length})`);
 		const p = getPkgFile(name);
 		if (p) {
 			const data = parsePkgData(p);
@@ -1038,14 +1064,13 @@ async function installWithOutCheckDep(
 		cpMeta(name);
 		const url = getPkgUrls(getData(name));
 		const { type, sum } = getPkgSums(getData(name));
-		console.log(`found ${url.length} assets for ${name}`);
 		for (const [n, i] of url.entries())
 			urls.push({ name, url: i, sum: { type, value: sum[n] ?? "" } });
 	}
 	const sl = await downloadAssets(urls);
 	const sl2 = await make(sl, parseData);
 
-	console.log("install");
+	xLog.task("install");
 
 	const pkgFiles: string[] = [];
 	for (const i of sl2) {
@@ -1064,14 +1089,18 @@ async function installWithOutCheckDep(
 		}).spawn();
 		const { success } = await c.output();
 		if (!success) {
-			console.log(`Some packages failed to install. ${sl2.join(" ")}`);
+			xLog.error(
+				`Some packages failed to install.\n${sl2.map(Color.pkgName).join(" ")}`,
+			);
 		}
 	}
 
 	if (sl2.length !== nl.length)
-		console.log(
-			"Some packages failed to build.",
-			nl.filter((x) => !sl2.includes(x)).join(", "),
+		xLog.warn(
+			`Some packages failed to build.\n${nl
+				.filter((x) => !sl2.includes(x))
+				.map(Color.pkgName)
+				.join(", ")}`,
 		);
 }
 
@@ -1084,7 +1113,7 @@ async function update() {
 	}).spawn();
 	await x.output();
 
-	console.log("checking for updates...");
+	xLog.task("checking for updates...");
 
 	const l = await getNewPackages();
 
@@ -1093,7 +1122,7 @@ async function update() {
 	const _nl = await checkbox({
 		message: "Select packages to update",
 		choices: l.map((p) => ({
-			name: `${p.local.name} ${p.local.version} -> ${p.remote.Version}`,
+			name: `${Color.pkgName(p.local.name)} ${Color.pkgVer(p.local.version)} -> ${Color.pkgVer(p.remote.Version)}`, // todo diff
 			value: p,
 		})),
 	});
@@ -1134,7 +1163,7 @@ async function update() {
 			needInstall
 				.map(
 					(i) =>
-						`${i}${inOfficial.includes(i) ? "" : " (AUR)"} (${Array.from(depMap.get(i)!).join(" ")})`,
+						`${Color.pkgName(i)}${inOfficial.includes(i) ? "" : " (AUR)"} (${Array.from(depMap.get(i)!).map(Color.pkgName).join(" ")})`,
 				)
 				.join(", "),
 		);

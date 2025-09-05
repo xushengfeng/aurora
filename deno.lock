@@ -12,7 +12,8 @@
     "jsr:@std/path@^1.1.1": "1.1.2",
     "jsr:@std/path@^1.1.2": "1.1.2",
     "npm:@inquirer/prompts@^7.8.4": "7.8.4",
-    "npm:@types/node@*": "22.15.15"
+    "npm:@types/node@*": "22.15.15",
+    "npm:yoctocolors@^2.1.2": "2.1.2"
   },
   "jsr": {
     "@std/assert@1.0.11": {
@@ -293,6 +294,10 @@
     "yoctocolors-cjs@2.1.3": {
       "integrity": "sha512-U/PBtDf35ff0D8X8D0jfdzHYEPFxAI7jJlxZXwCSez5M3190m+QobIfh+sWDWSHMCWWJN2AWamkegn6vr6YBTw==",
       "tarball": "https://registry.npmmirror.com/yoctocolors-cjs/-/yoctocolors-cjs-2.1.3.tgz"
+    },
+    "yoctocolors@2.1.2": {
+      "integrity": "sha512-CzhO+pFNo8ajLM2d2IW/R93ipy99LWjtwblvC1RsoSUMZgyLbYFr221TnSNT7GjGdYui6P459mw9JH/g/zW2ug==",
+      "tarball": "https://registry.npmmirror.com/yoctocolors/-/yoctocolors-2.1.2.tgz"
     }
   },
   "workspace": {
@@ -301,7 +306,8 @@
       "jsr:@std/cli@^1.0.21",
       "jsr:@std/fs@^1.0.19",
       "jsr:@std/path@^1.1.2",
-      "npm:@inquirer/prompts@^7.8.4"
+      "npm:@inquirer/prompts@^7.8.4",
+      "npm:yoctocolors@^2.1.2"
     ]
   }
 }

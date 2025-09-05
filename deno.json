@@ -4,7 +4,8 @@
         "@std/async": "jsr:@std/async@^1.0.14",
         "@std/cli": "jsr:@std/cli@^1.0.21",
         "@std/fs": "jsr:@std/fs@^1.0.19",
-        "@std/path": "jsr:@std/path@^1.1.2"
+        "@std/path": "jsr:@std/path@^1.1.2",
+        "yoctocolors": "npm:yoctocolors@^2.1.2"
     },
     "tasks": {
         "build": "deno compile -A --output dist/aurora src/main.ts"
