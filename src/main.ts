@@ -1200,4 +1200,21 @@ async function update() {
 	);
 }
 
+async function justDownloadAssets(dir: string) {
+	const file = Deno.readTextFileSync(join(dir, ".SRCINFO"));
+	const urls: {
+		name: string;
+		url: string;
+		sum: { type: string; value: string };
+	}[] = [];
+
+	const data = parsePkgData(file);
+	const name = data.keyName;
+	const url = getPkgUrls(data);
+	const { type, sum } = getPkgSums(data);
+	for (const [n, i] of url.entries())
+		urls.push({ name, url: i, sum: { type, value: sum[n] ?? "" } });
+	await downloadAssets(urls, join(dir, ".."));
+}
+
 update();
