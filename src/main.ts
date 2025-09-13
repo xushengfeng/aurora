@@ -725,6 +725,7 @@ async function sumCheckStrict(path: string, type: string, sum: string) {
 
 async function downloadAssets(
 	urls: { name: string; url: string; sum: { type: string; value: string } }[],
+	dir: string,
 ) {
 	const counts = new Map<string, number>();
 
@@ -755,7 +756,7 @@ async function downloadAssets(
 			deCount(name);
 			continue;
 		}
-		const path = join(buildPath, name, filename);
+		const path = join(dir, name, filename);
 		if (type === "git") {
 			gitL.push({ name, url, filename, fileUrl, type, path });
 		} else if (type === "http") {
@@ -1074,7 +1075,7 @@ async function installWithOutCheckDep(
 		for (const [n, i] of url.entries())
 			urls.push({ name, url: i, sum: { type, value: sum[n] ?? "" } });
 	}
-	const sl = await downloadAssets(urls);
+	const sl = await downloadAssets(urls, buildPath);
 	const sl2 = await make(sl, parseData);
 
 	xLog.task("install");
