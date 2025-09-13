@@ -1217,4 +1217,33 @@ async function justDownloadAssets(dir: string) {
 	await downloadAssets(urls, join(dir, ".."));
 }
 
-update();
+function isPacmanArgsEq(args1: string, args2: string) {
+	return args1.split("").sort().join("") === args2.split("").sort().join("");
+}
+
+async function run() {
+	const args = Deno.args;
+	const mainArg = args.filter((i) => i.match(/^-[A-Z]/))[0]?.slice(1);
+	const softwareNames = args.filter((i) => !i.startsWith("-"));
+	const otherArgs = args.filter((i) => i.startsWith("--"));
+	if (mainArg === undefined) {
+		update();
+	} else if (
+		isPacmanArgsEq(mainArg, "Syu") ||
+		isPacmanArgsEq(mainArg, "Syyu")
+	) {
+		update();
+	} else {
+		// todo sudo check
+		const x = new Deno.Command("sudo", {
+			// todo filter otherArgs
+			args: ["pacman", `-${mainArg}`, ...softwareNames, ...otherArgs],
+			stdin: "inherit",
+			stdout: "inherit",
+			stderr: "inherit",
+		}).spawn();
+		await x.output();
+	}
+}
+
+run();
