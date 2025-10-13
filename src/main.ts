@@ -776,8 +776,10 @@ async function downloadAssets(
 	function mprogress(ps: ReturnType<typeof progress>[]) {
 		const all = urls.length;
 		const run = all - counts.values().reduce((a, b) => a + b, 0);
+		const msg = `${run}/${all}`;
+		const w = Deno.consoleSize().columns - msg.length - 1;
 		changeText.update(
-			`${ps.map((i) => i.toString()).join("\n")}\n${p(Math.round((run / all) * 40), 40)} ${run}/${all}`,
+			`${ps.map((i) => i.toString()).join("\n")}\n${p(Math.round((run / all) * w), w)} ${msg}`,
 		);
 	}
 
@@ -790,11 +792,12 @@ async function downloadAssets(
 		let _all = 0;
 		return {
 			update: (ic: number, iall?: number) => {
-				const w = 40;
 				const all = iall ?? _all;
 				const c = Math.min(all, ic);
+				const meg = `${(c / 1024 ** 2).toFixed(2)}MB/${(all / 1024 ** 2).toFixed(2)}MB ${x}`;
+				const w = Deno.consoleSize().columns - meg.length - 1;
 				const sw = all === 0 ? w : Math.round((c / all) * w);
-				const s = `${p(sw, w)} ${(c / 1024 ** 2).toFixed(2)}MB/${(all / 1024 ** 2).toFixed(2)}MB ${x}`;
+				const s = `${p(sw, w)} ${meg}`;
 				t = s;
 				_all = all;
 				mprogress(ps);
@@ -828,7 +831,11 @@ async function downloadAssets(
 		const { fileUrl, filename, name, path } = httpL.pop()!;
 		const nurl = urlMapping(fileUrl, "http");
 
-		const p = progress(`${Color.filePath(filename)} ${Color.pkgName(name)}`);
+		const shortFilename =
+			filename.length > 10 ? `${filename.slice(0, 7)}...` : filename;
+		const p = progress(
+			`${Color.filePath(shortFilename)} ${Color.pkgName(name)}`,
+		);
 		p.update(0, 0);
 
 		ps.push(p);
