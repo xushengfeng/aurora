@@ -1,4 +1,4 @@
-import { checkbox, confirm } from "@inquirer/prompts";
+import { checkbox, confirm, select } from "@inquirer/prompts";
 import { copySync, ensureDirSync } from "@std/fs";
 import { join } from "@std/path";
 import { blue, bold, gray, green, red } from "yoctocolors";
@@ -1221,6 +1221,133 @@ function isPacmanArgsEq(args1: string, args2: string) {
 	return args1.split("").sort().join("") === args2.split("").sort().join("");
 }
 
+async function install(names: string[]) {
+	const pkg: { name: string; desc?: string; isOffical: boolean }[] = [];
+	const notFound: string[] = [];
+	for (const name of names) {
+		const command = new Deno.Command("pacman", {
+			args: ["-Si", name],
+			stdout: "null",
+			stderr: "null",
+		});
+		const { success } = await command.output();
+		if (success) {
+			pkg.push({ name, isOffical: true });
+		} else {
+			notFound.push(name);
+		}
+	}
+
+	if (notFound.length) {
+		for (const name of notFound) {
+			const url = new URL(aurUrl);
+			url.searchParams.set("type", "search");
+			url.searchParams.set("arg", name);
+			const res = await fetch(url.toString());
+			const data = (await res.json()) as AURSearchResponse;
+			if (data.type === "search" && data.resultcount > 0) {
+				pkg.push(
+					...data.results.map((pkg) => ({
+						name: pkg.Name,
+						desc: pkg.Description,
+						isOffical: false,
+					})),
+				);
+			}
+		}
+	}
+
+	let selectedPkg: (typeof pkg)[0] | null = null;
+	if (pkg.length) {
+		selectedPkg = await select({
+			message: "选择要安装的包:",
+			choices: pkg.map((i) => ({
+				name: `${Color.pkgName(i.name)}${i.isOffical ? "" : " (AUR)"} ${i.desc}`,
+				value: i,
+			})),
+		});
+	} else {
+		console.log("No packages found.");
+		return;
+	}
+
+	if (selectedPkg.isOffical) {
+		const c = new Deno.Command("sudo", {
+			args: ["pacman", "-S", "--noconfirm", selectedPkg.name],
+			stdin: "inherit",
+			stdout: "inherit",
+			stderr: "inherit",
+		}).spawn();
+		await c.output();
+		return;
+	}
+
+	const aurPkg = await getAurInfo([selectedPkg.name], useGithubIndex);
+
+	const depMap = new Map<string, Set<string>>();
+	function addDep(name: string, dep: string) {
+		const l = depMap.get(dep) ?? new Set();
+		l.add(name);
+		depMap.set(dep, l);
+	}
+	for (const {
+		local: { name },
+		remote: { MakeDepends, Depends },
+	} of aurPkg.results.map((remote) => ({
+		local: { name: remote.Name },
+		remote: {
+			MakeDepends: remote.MakeDepends,
+			Depends: remote.Depends,
+		},
+	}))) {
+		for (const i of MakeDepends ?? []) {
+			addDep(name, i);
+		}
+		for (const i of Depends ?? []) {
+			addDep(name, i);
+		}
+	}
+	const hadInstalled = await checkPkgBuildDeps(Array.from(depMap.keys())); // todo with version check aur update
+	const needInstall = Array.from(depMap.keys()).filter(
+		(i) => !hadInstalled.includes(i),
+	);
+	const inOfficial = await checkPkgInOfficial(needInstall);
+	if (needInstall.length) {
+		console.log(
+			"need install deps:",
+			needInstall
+				.map(
+					(i) =>
+						`${Color.pkgName(i)}${inOfficial.includes(i) ? "" : " (AUR)"} (${Array.from(depMap.get(i)!).map(Color.pkgName).join(" ")})`,
+				)
+				.join(", "),
+		);
+		const installDep = await confirm({
+			message: `Install?`,
+		});
+		if (!installDep) return;
+		await installWithOutCheckDep(
+			needInstall.map((i) => ({
+				name: i,
+				version:
+					aurPkg.results.find((i) => i.PackageBase === selectedPkg.name)
+						?.Version ?? "",
+				official: inOfficial.includes(i),
+			})),
+		);
+	}
+
+	await installWithOutCheckDep([
+		{
+			name: selectedPkg.name,
+			version:
+				aurPkg.results.find((i) => i.PackageBase === selectedPkg.name)
+					?.Version ?? "",
+			official: false,
+		},
+	]);
+}
+
 async function run() {
 	const args = Deno.args;
 	const mainArg = args.filter((i) => i.match(/^-[A-Z]/))[0]?.slice(1);
@@ -1233,16 +1360,18 @@ async function run() {
 		isPacmanArgsEq(mainArg, "Syyu")
 	) {
 		update();
+	} else if (isPacmanArgsEq(mainArg, "S")) {
+		// 实现 install 功能
+		await install(softwareNames);
 	} else {
 		// todo sudo check
-		const x = new Deno.Command("sudo", {
-			// todo filter otherArgs
-			args: ["pacman", `-${mainArg}`, ...softwareNames, ...otherArgs],
+		const proc = new Deno.Command("sudo", {
+			args: ["pacman", `-${mainArg}`].concat(softwareNames, otherArgs),
 			stdin: "inherit",
 			stdout: "inherit",
 			stderr: "inherit",
 		}).spawn();
-		await x.output();
+		await proc.output();
 	}
 }
 
