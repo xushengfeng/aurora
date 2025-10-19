@@ -67,6 +67,7 @@ type Config = {
         to: string;
     }[];
     "build.download.concurrent": number; // 并行下载文件数，默认为4
+    "web.cert": string; // 网络证书
 };
 ```
 

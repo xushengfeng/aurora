@@ -101,6 +101,7 @@ type Config = {
 	"build.useMirror": boolean;
 	"build.mirrorList": typeof urlMappingList;
 	"build.download.concurrent": number;
+	"web.cert": string;
 };
 
 const appName = "aurora";
@@ -167,6 +168,13 @@ const urlMappingList: {
 		: [];
 
 const downloadConcurrent = config["build.download.concurrent"] ?? 4;
+
+const caCert = config["web.cert"]
+	? await Deno.readTextFile(config["web.cert"])
+	: undefined;
+const client = caCert
+	? Deno.createHttpClient({ caCerts: [caCert] })
+	: undefined;
 
 const Color = {
 	pkgName: (text: string) => bold(blue(text)),
@@ -248,7 +256,7 @@ async function getAurInfo(
 		for (const name of names) {
 			url.searchParams.append("arg[]", name);
 		}
-		const res = await fetch(url.toString());
+		const res = await fetch(url.toString(), { client });
 		const data = (await res.json()) as AURMultiInfoResponse;
 		if (data.type === "error") {
 			throw new Error(data.error);
@@ -279,6 +287,7 @@ async function getAurInfo(
 					Authorization: `Bearer ${githubToken}`,
 				},
 				body: JSON.stringify({ query: graphql }),
+				client,
 			})
 		).json()) as {
 			data: Record<string, { object: { text: string } | null } | null>;
@@ -354,7 +363,7 @@ async function fetchFile(
 	let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
 
 	try {
-		const res = await fetch(url);
+		const res = await fetch(url, { client });
 
 		if (!res.ok) {
 			throw new Error(
@@ -1250,7 +1259,7 @@ async function install(names: string[]) {
 			const url = new URL(aurUrl);
 			url.searchParams.set("type", "search");
 			url.searchParams.set("arg", name);
-			const res = await fetch(url.toString());
+			const res = await fetch(url.toString(), { client });
 			const data = (await res.json()) as AURSearchResponse;
 			if (data.type === "search" && data.resultcount > 0) {
 				pkg.push(
