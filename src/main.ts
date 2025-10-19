@@ -1,6 +1,7 @@
 import { checkbox, confirm, select } from "@inquirer/prompts";
 import { copySync, ensureDirSync } from "@std/fs";
 import { join } from "@std/path";
+import stringWidth from "npm:string-width";
 import { blue, bold, gray, green, red } from "yoctocolors";
 import { changeOut } from "./simple_tui.ts";
 
@@ -777,14 +778,16 @@ async function downloadAssets(
 		const all = urls.length;
 		const run = all - counts.values().reduce((a, b) => a + b, 0);
 		const msg = `${run}/${all}`;
-		const w = Deno.consoleSize().columns - msg.length - 1;
+		const w = Deno.consoleSize().columns - stringWidth(msg) - 1;
 		changeText.update(
-			`${ps.map((i) => i.toString()).join("\n")}\n${p(Math.round((run / all) * w), w)} ${msg}`,
+			`${ps.map((i) => i.toString()).join("\n")}\n${p(run / all, w)} ${msg}`,
 		);
 	}
 
-	function p(i: number, a: number) {
-		return `[${"#".repeat(i)}${"-".repeat(a - i)}]`;
+	function p(percentage: number, width: number) {
+		const xwidth = width - 2;
+		const xi = Math.floor(percentage * xwidth);
+		return `[${"#".repeat(xi)}${"-".repeat(xwidth - xi)}]`;
 	}
 
 	function progress(x: string) {
@@ -794,10 +797,11 @@ async function downloadAssets(
 			update: (ic: number, iall?: number) => {
 				const all = iall ?? _all;
 				const c = Math.min(all, ic);
-				const meg = `${(c / 1024 ** 2).toFixed(2)}MB/${(all / 1024 ** 2).toFixed(2)}MB ${x}`;
-				const w = Deno.consoleSize().columns - meg.length - 1;
-				const sw = all === 0 ? w : Math.round((c / all) * w);
-				const s = `${p(sw, w)} ${meg}`;
+				const sizeMeg = `${(c / 1024 ** 2).toFixed(2)}MB/${(all / 1024 ** 2).toFixed(2)}MB`;
+				const meg = x;
+				const w = Deno.consoleSize().columns;
+				const sw = all === 0 ? 1 : c / all;
+				const s = `${" ".repeat(w - stringWidth(meg) - 1)} ${meg}\n${p(sw, w - stringWidth(sizeMeg) - 1)} ${sizeMeg}`;
 				t = s;
 				_all = all;
 				mprogress(ps);
@@ -831,11 +835,7 @@ async function downloadAssets(
 		const { fileUrl, filename, name, path } = httpL.pop()!;
 		const nurl = urlMapping(fileUrl, "http");
 
-		const shortFilename =
-			filename.length > 10 ? `${filename.slice(0, 7)}...` : filename;
-		const p = progress(
-			`${Color.filePath(shortFilename)} ${Color.pkgName(name)}`,
-		);
+		const p = progress(`${Color.filePath(filename)} ${Color.pkgName(name)}`);
 		p.update(0, 0);
 
 		ps.push(p);

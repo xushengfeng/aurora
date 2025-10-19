@@ -13,6 +13,8 @@
     "jsr:@std/path@^1.1.2": "1.1.2",
     "npm:@inquirer/prompts@^7.8.4": "7.8.4",
     "npm:@types/node@*": "22.15.15",
+    "npm:string-width@*": "8.1.0",
+    "npm:string-width@^8.1.0": "8.1.0",
     "npm:yoctocolors@^2.1.2": "2.1.2"
   },
   "jsr": {
@@ -205,6 +207,10 @@
       "integrity": "sha512-quJQXlTSUGL2LH9SUXo8VwsY4soanhgo6LNSm84E1LBcE8s3O0wpdiRzyR9z/ZZJMlMWv37qOOb9pdJlMUEKFQ==",
       "tarball": "https://registry.npmmirror.com/ansi-regex/-/ansi-regex-5.0.1.tgz"
     },
+    "ansi-regex@6.2.0": {
+      "integrity": "sha512-TKY5pyBkHyADOPYlRT9Lx6F544mPl0vS5Ew7BJ45hA08Q+t3GjbueLliBWN3sMICk6+y7HdyxSzC4bWS8baBdg==",
+      "tarball": "https://registry.npmmirror.com/ansi-regex/-/ansi-regex-6.2.0.tgz"
+    },
     "ansi-styles@4.3.0": {
       "integrity": "sha512-zbB9rCJAT1rbjiVDb2hqKFHNYLxgtk8NURxZ3IZwD3F6NtxbXZQCnnSi1Lkx+IDohdPlFp222wVALIheZJQSEg==",
       "dependencies": [
@@ -235,6 +241,10 @@
       "integrity": "sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==",
       "tarball": "https://registry.npmmirror.com/emoji-regex/-/emoji-regex-8.0.0.tgz"
     },
+    "get-east-asian-width@1.4.0": {
+      "integrity": "sha512-QZjmEOC+IT1uk6Rx0sX22V6uHWVwbdbxf1faPqJ1QhLdGgsRGCZoyaQBm/piRdJy/D2um6hM1UP7ZEeQ4EkP+Q==",
+      "tarball": "https://registry.npmmirror.com/get-east-asian-width/-/get-east-asian-width-1.4.0.tgz"
+    },
     "iconv-lite@0.6.3": {
       "integrity": "sha512-4fCk79wshMdzMp2rH06qWrJE4iolqLhCUH+OiuIgU++RB0+94NlDL81atO7GX55uUKueo0txHNtvEyI6D7WdMw==",
       "dependencies": [
@@ -263,16 +273,31 @@
       "dependencies": [
         "emoji-regex",
         "is-fullwidth-code-point",
-        "strip-ansi"
+        "strip-ansi@6.0.1"
       ],
       "tarball": "https://registry.npmmirror.com/string-width/-/string-width-4.2.3.tgz"
+    },
+    "string-width@8.1.0": {
+      "integrity": "sha512-Kxl3KJGb/gxkaUMOjRsQ8IrXiGW75O4E3RPjFIINOVH8AMl2SQ/yWdTzWwF3FevIX9LcMAjJW+GRwAlAbTSXdg==",
+      "dependencies": [
+        "get-east-asian-width",
+        "strip-ansi@7.1.0"
+      ],
+      "tarball": "https://registry.npmmirror.com/string-width/-/string-width-8.1.0.tgz"
     },
     "strip-ansi@6.0.1": {
       "integrity": "sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==",
       "dependencies": [
-        "ansi-regex"
+        "ansi-regex@5.0.1"
       ],
       "tarball": "https://registry.npmmirror.com/strip-ansi/-/strip-ansi-6.0.1.tgz"
+    },
+    "strip-ansi@7.1.0": {
+      "integrity": "sha512-iq6eVVI64nQQTRYq2KtEg2d2uU7LElhTJwsH4YzIHZshxlgZms/wIc4VoDQTlG/IvVIrBKG06CrZnp0qv7hkcQ==",
+      "dependencies": [
+        "ansi-regex@6.2.0"
+      ],
+      "tarball": "https://registry.npmmirror.com/strip-ansi/-/strip-ansi-7.1.0.tgz"
     },
     "type-fest@0.21.3": {
       "integrity": "sha512-t0rzBq87m3fVcduHDUFhKmyyX+9eo6WQjZvf51Ea/M0Q7+T374Jp1aUiyUl0GKxp8M/OETVHSDvmkyPgvX+X2w==",
@@ -286,8 +311,8 @@
       "integrity": "sha512-r6lPcBGxZXlIcymEu7InxDMhdW0KDxpLgoFLcguasxCaJ/SOIZwINatK9KY/tf+ZrlywOKU0UDj3ATXUBfxJXA==",
       "dependencies": [
         "ansi-styles",
-        "string-width",
-        "strip-ansi"
+        "string-width@4.2.3",
+        "strip-ansi@6.0.1"
       ],
       "tarball": "https://registry.npmmirror.com/wrap-ansi/-/wrap-ansi-6.2.0.tgz"
     },
@@ -307,6 +332,7 @@
       "jsr:@std/fs@^1.0.19",
       "jsr:@std/path@^1.1.2",
       "npm:@inquirer/prompts@^7.8.4",
+      "npm:string-width@^8.1.0",
       "npm:yoctocolors@^2.1.2"
     ]
   }
