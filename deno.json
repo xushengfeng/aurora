@@ -1,5 +1,5 @@
 {
-    "version": "1.0.0",
+    "version": "1.0.1",
     "imports": {
         "@inquirer/prompts": "npm:@inquirer/prompts@^7.8.4",
         "@std/async": "jsr:@std/async@^1.0.14",
