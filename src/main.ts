@@ -1051,7 +1051,7 @@ async function installWithOutCheckDep(
 		await c.output();
 	}
 
-	const nl = names.map((i) => i.name);
+	const nl = names.filter((i) => !i.official).map((i) => i.name);
 
 	ensureDirSync(basePath);
 	ensureDirSync(pkgbuildPath);
