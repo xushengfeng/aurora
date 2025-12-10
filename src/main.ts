@@ -1379,6 +1379,28 @@ async function run() {
 	} else if (isPacmanArgsEq(mainArg, "S")) {
 		// 实现 install 功能
 		await install(softwareNames);
+	} else if (isPacmanArgsEq(mainArg, "Scc")) {
+		const proc = new Deno.Command("sudo", {
+			args: ["pacman", "-Scc"],
+			stdin: "inherit",
+			stdout: "inherit",
+			stderr: "inherit",
+		}).spawn();
+		await proc.output();
+		console.log(`aur cache ${buildPath}`);
+		const c = await confirm({
+			message: "Also clear all AUR build cache?",
+			default: false,
+		});
+		if (c) {
+			for (const i of Deno.readDirSync(buildPath)) {
+				try {
+					Deno.removeSync(join(buildPath, i.name), { recursive: true });
+				} catch {
+					console.warn(`can't remove ${i.name} in build cache`);
+				}
+			}
+		}
 	} else {
 		// todo sudo check
 		const proc = new Deno.Command("sudo", {
