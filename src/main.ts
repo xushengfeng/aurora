@@ -152,17 +152,17 @@ const urlMappingList: {
 				{
 					src: "https://raw.githubusercontent.com",
 					type: "http",
-					to: "https://raw.gitmirror.com",
+					to: "https://gh-proxy.com/https://raw.githubusercontent.com",
 				},
 				{
 					src: "https://github.com",
 					type: "http",
-					to: "https://hub.gitmirror.com/https://github.com",
+					to: "https://gh-proxy.com/https://github.com",
 				},
 				{
 					src: "https://github.com",
 					type: "git",
-					to: "https://hub.gitmirror.com/https://github.com",
+					to: "https://gh-proxy.com/https://github.com",
 				},
 			])
 		: [];
