@@ -794,7 +794,7 @@ async function downloadAssets(
 	}
 
 	function p(percentage: number, width: number) {
-		const xwidth = width - 2;
+		const xwidth = Math.max(width - 2, 0);
 		const xi = Math.floor(percentage * xwidth);
 		return `[${"#".repeat(xi)}${"-".repeat(xwidth - xi)}]`;
 	}
@@ -810,7 +810,7 @@ async function downloadAssets(
 				const meg = x;
 				const w = Deno.consoleSize().columns;
 				const sw = all === 0 ? 1 : c / all;
-				const s = `${" ".repeat(w - stringWidth(meg) - 1)} ${meg}\n${p(sw, w - stringWidth(sizeMeg) - 1)} ${sizeMeg}`;
+				const s = `${" ".repeat(Math.max(w - stringWidth(meg) - 1, 0))} ${meg}\n${p(sw, Math.max(w - stringWidth(sizeMeg) - 1, 0))} ${sizeMeg}`;
 				t = s;
 				_all = all;
 				mprogress(ps);
