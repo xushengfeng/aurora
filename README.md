@@ -4,10 +4,10 @@
 
 ## 特色
 
--   支持方向键交互选择
--   自带 GitHub 镜像（这个是软件包构建时需要的）
--   可使用 GitHub aur 镜像（这个是包索引，用于检查包更新， https://github.com/archlinux/aur ）
--   构建时可同时下载多个文件
+- 支持方向键交互选择
+- 自带 GitHub 镜像（这个是软件包构建时需要的）
+- 可使用 GitHub aur 镜像（这个是包索引，用于检查包更新， https://github.com/archlinux/aur ）
+- 构建时可同时下载多个文件
 
 ## 使用
 
@@ -41,9 +41,9 @@ deno run build
 
 现在只有更新功能
 
--   [ ] tab 补全支持
--   [ ] 编辑 PKGBUILD 文件
--   [ ] aur 更复杂的依赖（目前只处理的一层）
+- [ ] tab 补全支持
+- [ ] 编辑 PKGBUILD 文件
+- [ ] aur 更复杂的依赖（目前只处理的一层）
 
 ## 配置
 
@@ -121,3 +121,7 @@ type Config = {
 设置`makepkg`的镜像很麻烦。
 
 所以 aurora 不使用`makepkg`来下载构建数据文件，而是用 deno 自带的`fetch`来下载，这样做镜像很方便。同时也可以实现多文件并行下载。
+
+### 使用目录
+
+元数据位置：`~/.cache/aurora/pkgbuild` 编译软件位置：`~/.cache/aurora/build`
