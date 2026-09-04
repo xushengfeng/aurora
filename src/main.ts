@@ -1143,6 +1143,11 @@ async function update() {
 
 	// todo get dkg diff like out of date
 
+	if (l.length === 0) {
+		console.log("no update");
+		return;
+	}
+
 	const _nl = await checkbox({
 		message: "Select packages to update",
 		choices: l.map((p) => ({
